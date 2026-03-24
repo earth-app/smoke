@@ -8,6 +8,9 @@ export default defineNuxtConfig({
 	runtimeConfig: {
 		public: {
 			site_url: process.env.NUXT_PUBLIC_SITE_URL
+		},
+		turnstile: {
+			secretKey: process.env.NUXT_TURNSTILE_SECRET_KEY || ''
 		}
 	},
 	ssr: true,
@@ -15,9 +18,13 @@ export default defineNuxtConfig({
 	devtools: { enabled: process.env.NODE_ENV === 'development' },
 	srcDir: 'src',
 	serverDir: 'src/server',
+	dir: {
+		shared: 'src/shared'
+	},
 	css: ['~/assets/css/main.css'],
 	vite: {
-		plugins: [tailwindcss()],
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		plugins: [tailwindcss() as any],
 		css: {
 			devSourcemap: true,
 			transformer: 'lightningcss'
@@ -60,12 +67,17 @@ export default defineNuxtConfig({
 	},
 	modules: [
 		'@nuxthub/core',
+		'@nuxtjs/i18n',
 		'@nuxt/ui',
 		'nuxt-viewport',
 		'@nuxtjs/robots',
 		'@nuxtjs/sitemap',
 		'nuxt-schema-org',
+		'nuxt-api-shield',
+		'@nuxtjs/turnstile',
 		'@nuxt/image',
+		'@pinia/nuxt',
+		'@nuxt/hints',
 		[
 			'@nuxtjs/google-fonts',
 			{
@@ -110,11 +122,32 @@ export default defineNuxtConfig({
 			}
 		}
 	},
+	nuxtApiShield: {
+		limit: {
+			max: 500,
+			duration: 60,
+			ban: 300
+		},
+		delayOnBan: true,
+		errorMessage: 'Too many requests from this IP, please try again later.'
+	},
+	i18n: {
+		locales: [{ code: 'en', language: 'en-US' }],
+		defaultLocale: 'en'
+	},
+	turnstile: {
+		siteKey: process.env.NUXT_PUBLIC_TURNSTILE_SITE_KEY || '',
+		addValidateEndpoint: true
+	},
 	routeRules: {
 		'/_ipx/**': {
 			headers: {
 				'Cache-Control': 'public, max-age=31536000, immutable'
 			}
 		}
+	},
+	experimental: {
+		renderJsonPayloads: true,
+		viewTransition: true
 	}
 });
