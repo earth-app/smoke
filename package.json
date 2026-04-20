@@ -36,6 +36,7 @@
     "nuxt": "^4.4.2",
     "nuxt-api-shield": "^0.10.2",
     "nuxt-schema-org": "^5.0.10",
+    "nuxt-viewport": "^2.4.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
