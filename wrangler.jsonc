@@ -5,6 +5,16 @@
 			"binding": "DB",
 			"migrations_table": "_hub_migrations",
 			"migrations_dir": ".output/server/db/migrations/"
+		},
+		{
+			"binding": "DB_SECONDARY",
+			"migrations_table": "_hub_migrations",
+			"migrations_dir": ".output/server/db/migrations/"
+		},
+		{
+			"binding": "DB_TERTIARY",
+			"migrations_table": "_hub_migrations",
+			"migrations_dir": ".output/server/db/migrations/"
 		}
 	],
 	"kv_namespaces": [
