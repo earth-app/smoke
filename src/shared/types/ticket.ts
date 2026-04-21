@@ -42,4 +42,14 @@ export type TicketMessage = {
 	sender: User | Customer;
 	message: string;
 	created_at: Date;
+	attachments?: TicketAttachment[];
+};
+
+export type TicketAttachment = {
+	id: number;
+	ticket_id: number;
+	data: ArrayBuffer;
+	file_name: string;
+	mimetype: string;
+	created_at: Date;
 };

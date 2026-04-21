@@ -16,7 +16,9 @@ export const users = sqliteTable(
 	{
 		id: text('id', { length: 32 }).primaryKey(),
 		username: text('username').notNull(),
-		created_at: integer('created_at').notNull(),
+		created_at: integer('created_at')
+			.notNull()
+			.default(sql`(strftime('%s', 'now'))`),
 
 		// password
 		password_hash: blob('password_hash').notNull(),
@@ -27,7 +29,7 @@ export const users = sqliteTable(
 		data: blob('data').notNull(),
 
 		// envelope encryption data
-		wrapped_dek: blob('dek').notNull(),
+		wrapped_dek: blob('wrapped_dek').notNull(),
 		nonce: blob('nonce').notNull(),
 		tag: blob('tag').notNull(),
 
@@ -40,12 +42,16 @@ export const users = sqliteTable(
 	]
 );
 
+export type DBUser = typeof users.$inferSelect;
+
 export const customers = sqliteTable(
 	'customers',
 	{
 		id: integer('id').primaryKey({ autoIncrement: true }),
 		avatar_url: text('avatar_url'),
-		created_at: integer('created_at').notNull(),
+		created_at: integer('created_at')
+			.notNull()
+			.default(sql`(strftime('%s', 'now'))`),
 
 		// encrypted payload
 		data: blob('data').notNull(),
@@ -61,15 +67,67 @@ export const customers = sqliteTable(
 	(table) => [index('idx_customers_created_at').on(table.created_at)]
 );
 
+export type DBCustomer = typeof customers.$inferSelect;
+
 export const labels = sqliteTable(
 	'labels',
 	{
 		id: integer('id').primaryKey({ autoIncrement: true }),
 		name: text('name').notNull(),
-		color: text('color')
+		color: text('color'),
+		created_at: integer('created_at')
+			.notNull()
+			.default(sql`(strftime('%s', 'now'))`)
 	},
 	(table) => [index('idx_labels_name').on(table.name)]
 );
+
+export type DBLabel = typeof labels.$inferSelect;
+
+export const tickets = sqliteTable(
+	'tickets',
+	{
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		title: text('title').notNull(),
+		created_at: integer('created_at')
+			.notNull()
+			.default(sql`(strftime('%s', 'now'))`),
+
+		// unencrypted fields
+		description: text('description').notNull(),
+		customer_id: integer('customer_id').notNull(),
+		status: text('status').notNull().default('open'),
+		priority: text('priority').notNull().default('none'),
+		labels: text('labels'), // comma-separated label IDs
+		assignees: text('assignees'), // comma-separated user IDs
+
+		// encrypted payloads
+		messages_data: blob('messages_data').notNull(),
+		attachments_data: blob('attachments_data').notNull(),
+
+		// envelope encryption data
+		wrapped_dek: blob('wrapped_dek').notNull(),
+		nonce: blob('nonce').notNull(),
+		tag: blob('tag').notNull(),
+
+		algorithm: text('algorithm').notNull(),
+		version: integer('version').notNull()
+	},
+	(table) => [
+		index('idx_tickets_title').on(table.title),
+		index('idx_tickets_description').on(table.description),
+		index('idx_tickets_customer_id').on(table.customer_id),
+		index('idx_tickets_labels').on(table.labels),
+		index('idx_tickets_assignees').on(table.assignees),
+		index('idx_tickets_status').on(table.status),
+		index('idx_tickets_priority').on(table.priority),
+		index('idx_tickets_created_at').on(table.created_at)
+	]
+);
+
+export type DBTicket = typeof tickets.$inferSelect;
+
+// collegedb initialization
 
 export let collegeDBInitialized = false;
 
