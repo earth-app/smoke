@@ -15,9 +15,10 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@cloudflare/workers-types": "^4.20260420.1",
+    "@cloudflare/workers-types": "^4.20260421.1",
     "@earth-app/collegedb": "^1.1.2",
     "@libsql/client": "^0.17.2",
+    "@noble/hashes": "^2.2.0",
     "@nuxt/icon": "^2.2.1",
     "@nuxt/image": "^2.0.0",
     "@nuxt/kit": "^4.4.2",
@@ -30,6 +31,7 @@
     "@nuxtjs/turnstile": "^1.1.2",
     "@pinia/nuxt": "^0.11.3",
     "@types/luxon": "^3.7.1",
+    "bcryptjs": "^3.0.3",
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
     "luxon": "^3.7.2",
@@ -50,7 +52,7 @@
     "prettier-plugin-organize-imports": "^4.3.0",
     "prettier-plugin-tailwindcss": "^0.7.2",
     "vue-tsc": "^3.2.7",
-    "wrangler": "^4.83.0"
+    "wrangler": "^4.84.1"
   },
   "lint-staged": {
     "*.{ts,js,vue,css,json,md}": "prettier --write"
