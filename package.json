@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@cloudflare/workers-types": "^4.20260421.1",
-    "@earth-app/collegedb": "^1.1.2",
+    "@earth-app/collegedb": "^1.1.3",
     "@libsql/client": "^0.17.2",
     "@noble/hashes": "^2.2.0",
     "@nuxt/icon": "^2.2.1",
