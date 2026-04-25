@@ -1,4 +1,4 @@
-import { first } from '@earth-app/collegedb';
+import { first, QueryResult } from '@earth-app/collegedb';
 import { argon2idAsync } from '@noble/hashes/argon2.js';
 import { scryptAsync } from '@noble/hashes/scrypt.js';
 import bcrypt from 'bcryptjs';
@@ -553,6 +553,40 @@ export async function decryptUser(user: DBUser, masterKey?: string): Promise<Use
 		created_at: new Date(Number(user.created_at) * 1000),
 		...asObject(decrypted)
 	} as User;
+}
+
+export async function decryptUsers(users: DBUser[], masterKey?: string): Promise<User[]> {
+	const decrypted = await Promise.allSettled(
+		users.map(async (user) => await decryptUser(user, masterKey))
+	);
+
+	const failed = decrypted.filter((r) => r.status === 'rejected');
+	if (failed.length > 0) {
+		console.error(
+			`User decryption failed on ${failed.length} shards`,
+			failed.map((r) => r.reason || 'Unknown')
+		);
+	}
+
+	return decrypted.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+}
+
+// database utilities
+
+/// returns successful results + errors, auto logs errors
+
+export function results<T>(response: (QueryResult<T> | null)[]): [T[], string[]] {
+	const nonNull = response.filter((r) => r != null);
+	if (nonNull.length === 0) return [[], []];
+
+	const suceeded = nonNull.filter((r) => r.success).flatMap((r) => r.results ?? []);
+	const failed = nonNull.filter((r) => !r.success).map((r) => r.error || 'Unknown error');
+
+	if (failed.length > 0) {
+		console.warn(`Query failed on ${failed.length} shard(s):`, failed);
+	}
+
+	return [suceeded, failed];
 }
 
 // user utilities
