@@ -134,6 +134,15 @@ export let collegeDBInitialized = false;
 export function ensureCollegeDB(env: any) {
 	if (collegeDBInitialized) return;
 
+	// check master key as apart of initialization
+	if (!env.MASTER_KEY) {
+		throw createError({
+			statusCode: 500,
+			message: 'Master encryption key not configured',
+			data: { field: 'MASTER_KEY' }
+		});
+	}
+
 	const candidateKeys = Object.keys(env).filter((k) => {
 		if (!k) return false;
 		if (k === 'KV' || k === 'CACHE' || k === 'EMAIL' || k === 'ShardCoordinator') return false;
