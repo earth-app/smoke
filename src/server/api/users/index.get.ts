@@ -1,7 +1,6 @@
-import { allAllShards } from '@earth-app/collegedb';
-import { ensureCollegeDB } from 'hub:db:schema';
-import { DBUser } from '~/server/db/schema';
-import { cache, decryptUser, query } from '~/server/utils';
+import { allAllShardsGlobal } from '@earth-app/collegedb';
+import { DBUser, ensureCollegeDB } from 'hub:db:schema';
+import { cache, decryptUsers, query } from '~/server/utils';
 
 export default defineEventHandler(async (event) => {
 	const { search, page, limit, offset, sort, sort_direction } = query(event, [
@@ -16,16 +15,19 @@ export default defineEventHandler(async (event) => {
 	return await cache(
 		cacheKey,
 		async () => {
-			const users = await allAllShards<DBUser>(
-				`SELECT id, username, data, wrapped_dek, nonce, tag, algorithm, version, created_at FROM users WHERE username LIKE ? ORDER BY ${sort} ${sort_direction} LIMIT ? OFFSET ?`,
-				[`%${search}%`, limit, offset]
-			).then((results) => results.flatMap((row) => row.results ?? []));
+			const sql = search
+				? 'SELECT id, username, data, wrapped_dek, nonce, tag, algorithm, version, created_at FROM users WHERE username LIKE ?'
+				: 'SELECT id, username, data, wrapped_dek, nonce, tag, algorithm, version, created_at FROM users';
+			const bindings = search ? [`%${search}%`] : [];
 
-			const decryptedUsers = await Promise.all(
-				users.map(async (user) => await decryptUser(user, masterKey))
-			);
+			const result = await allAllShardsGlobal<DBUser>(sql, bindings, {
+				sortBy: sort as keyof DBUser,
+				sortDirection: sort_direction as 'asc' | 'desc',
+				offset,
+				limit
+			});
 
-			return decryptedUsers;
+			return await decryptUsers(result.results, masterKey);
 		},
 		60
 	);
