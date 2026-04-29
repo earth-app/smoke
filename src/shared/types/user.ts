@@ -11,6 +11,7 @@ export type Customer = {
 	avatar_url?: string;
 	tags: Label[];
 	created_at: Date;
+	updated_at: Date;
 };
 
 export type User = {
@@ -22,6 +23,7 @@ export type User = {
 	role: Role;
 	permissions: Permission[];
 	created_at: Date;
+	updated_at: Date;
 	labels: Label[];
 };
 
