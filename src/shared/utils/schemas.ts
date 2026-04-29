@@ -1,6 +1,6 @@
 import z from 'zod';
 
-// primitives
+// #region primitives
 
 export const id = z
 	.string()
@@ -23,12 +23,20 @@ export const avatar_url = z
 	.max(512, 'Avatar URLs must be shorter than 512 characters')
 	.optional();
 
-// enums
+// #endregion
 
-export const role = z.enum(Object.values(Role));
-export const permissions = z.array(z.enum(Object.values(Permission)));
+// #region enums
 
-// object
+export const role = z
+	.enum(Object.values(Role))
+	.describe('The role of a user, which determines their permissions');
+export const permissions = z
+	.array(z.enum(Object.values(Permission)))
+	.describe('A list of permissions assigned to a user');
+
+// #endregion
+
+// #region objects
 
 export const label = z
 	.object({
@@ -53,13 +61,61 @@ export const user = z
 		role,
 		permissions,
 		created_at: z.date(),
+		updated_at: z.date(),
 		labels: z.array(label)
 	})
 	.describe('A registered user that performs actions for customers');
 
-// parameters
+// #endregion
+
+// #region parameters
 
 export const usernameParam = username.refine(
 	(val) =>
 		val !== 'current' && val.startsWith('@') && val.slice(1).length > 3 && val.slice(1).length < 64
 );
+
+export const passwordParam = z
+	.string()
+	.min(8, 'Password must be at least 8 characters long')
+	.max(128, 'Password cannot be longer than 128 characters')
+	.regex(/(?=.*[a-z])/, 'Password must contain at least one lowercase letter')
+	.regex(/(?=.*[A-Z])/, 'Password must contain at least one uppercase letter')
+	.regex(/(?=.*\d)/, 'Password must contain at least one number')
+	.regex(
+		/(?=.*[@$!%*?&])/,
+		'Password must contain at least one special character (@, $, !, %, *, ?, &)'
+	)
+	.describe('A password string that meets complexity requirements');
+
+export const userIdParam = id
+	.or(usernameParam)
+	.or(z.literal('current'))
+	.describe(
+		'A parameter that can be a user ID, username, or "current" to refer to the logged-in user'
+	);
+
+// #endregion
+
+// #region request body
+
+export const userCreateBody = z
+	.object({
+		username,
+		email
+	})
+	.describe('The body of a POST request to create a new user, completed by an administrator');
+
+export const userPatchBody = z
+	.object({
+		username: username.optional(),
+		email: email.optional(),
+		name: user.shape.name.optional(),
+		avatar_url: avatar_url,
+		role: role.optional(),
+		permissions: permissions.optional(),
+		labels: z.array(label).optional()
+	})
+	.describe('The body of a PATCH request to update a user');
+
+// #endregion
