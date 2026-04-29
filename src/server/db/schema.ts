@@ -1,12 +1,12 @@
+import type { DrizzleClientLike, SQLDatabase } from '@earth-app/collegedb';
 import {
 	createDrizzleSQLProvider,
 	createNuxtHubKVProvider,
-	DrizzleClientLike,
-	initialize,
-	SQLDatabase
+	initialize
 } from '@earth-app/collegedb';
 import { sql } from 'drizzle-orm';
-import { AnyD1Database, drizzle as drizzleD1 } from 'drizzle-orm/d1';
+import type { AnyD1Database } from 'drizzle-orm/d1';
+import { drizzle as drizzleD1 } from 'drizzle-orm/d1';
 import { blob, index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import { db as primaryDb } from 'hub:db';
 import { kv } from 'hub:kv';
@@ -19,14 +19,18 @@ export const users = sqliteTable(
 		created_at: integer('created_at')
 			.notNull()
 			.default(sql`(strftime('%s', 'now'))`),
+		updated_at: integer('updated_at')
+			.notNull()
+			.default(sql`(strftime('%s', 'now'))`),
 
-		// password
-		password_hash: blob('password_hash').notNull(),
-		password_salt: blob('password_salt').notNull(),
-		password_algorithm: text('password_algorithm').notNull(),
+		// password - can be null if password was not set yet
+		password_hash: blob('password_hash'),
+		password_salt: blob('password_salt'),
+		password_algorithm: text('password_algorithm'),
 
 		// encrypted payload
 		data: blob('data').notNull(),
+		email_lookup: text('email_lookup', { length: 255 }).notNull(), // hash of email for lookup since email is encrypted
 
 		// envelope encryption data
 		wrapped_dek: blob('wrapped_dek').notNull(),
@@ -38,7 +42,9 @@ export const users = sqliteTable(
 	},
 	(table) => [
 		index('idx_users_username').on(table.username),
-		index('idx_users_created_at').on(table.created_at)
+		index('idx_users_created_at').on(table.created_at),
+		index('idx_users_updated_at').on(table.updated_at),
+		index('idx_users_email_lookup').on(table.email_lookup)
 	]
 );
 
@@ -134,12 +140,22 @@ export let collegeDBInitialized = false;
 export function ensureCollegeDB(env: any) {
 	if (collegeDBInitialized) return;
 
-	// check master key as apart of initialization
+	// check master key + hmac key as apart of initialization
 	if (!env.MASTER_KEY) {
 		throw createError({
 			statusCode: 500,
-			message: 'Master encryption key not configured',
+			message:
+				'Master encryption key not configured; please set MASTER_KEY in your .env file. This key is required for encrypting sensitive data and should be a secure, random string.',
 			data: { field: 'MASTER_KEY' }
+		});
+	}
+
+	if (!env.HMAC_SECRET) {
+		throw createError({
+			statusCode: 500,
+			message:
+				'HMAC secret not configured; please set HMAC_SECRET in your .env file. This key is required for generating secure hashes. You can generate it by running `openssl rand -hex 32` in your terminal.',
+			data: { field: 'HMAC_SECRET' }
 		});
 	}
 

@@ -1,15 +1,23 @@
-import { first, QueryResult } from '@earth-app/collegedb';
+import {
+	allAllShardsGlobal,
+	first,
+	firstByLookupKey,
+	QueryResult,
+	run
+} from '@earth-app/collegedb';
 import { argon2idAsync } from '@noble/hashes/argon2.js';
 import { scryptAsync } from '@noble/hashes/scrypt.js';
 import bcrypt from 'bcryptjs';
 import type { H3Event } from 'h3';
 import { ensureCollegeDB } from 'hub:db:schema';
 import { kv } from 'hub:kv';
-import type { User } from '~/shared/types/user';
+import { DEFAULT_PERMISSIONS, Permission, Role, type User } from '~/shared/types/user';
 import type { DBUser } from './db/schema';
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
+
+// #region Constants and Types
 
 const ENCRYPTION_VERSION = 1;
 const WRAPPED_DEK_VERSION = 1;
@@ -28,7 +36,9 @@ const MAX_SESSION_TOKENS_PER_USER = 5;
 export type PasswordAlgorithm = 'bcrypt' | 'argon2id' | 'scrypt';
 export type EncryptionAlgorithm = PasswordAlgorithm | 'aes-256-gcm';
 
-// request utilities
+// #endregion
+
+// #region Requests
 
 export async function cache<T>(
 	key: string,
@@ -93,7 +103,7 @@ export function query(event: H3Event, sortFields: string[] = ['created_at']) {
 		});
 	}
 
-	const sort_direction0 = sort_direction?.toString() || 'desc';
+	const sort_direction0: 'asc' | 'desc' = (sort_direction?.toString() as 'asc' | 'desc') || 'desc';
 	if (!validSortDirections.includes(sort_direction0)) {
 		throw createError({
 			statusCode: 400,
@@ -112,7 +122,9 @@ export function query(event: H3Event, sortFields: string[] = ['created_at']) {
 	};
 }
 
-// encryption + hashing utilities
+// #endregion
+
+// #region Encryption + Hashing
 
 export function toUint8Array(value: unknown, field: string): Uint8Array {
 	if (value instanceof Uint8Array) return value;
@@ -145,8 +157,6 @@ export function asObject(value: unknown): Record<string, unknown> {
 
 	return { payload: value };
 }
-
-export const STUB_KEY = 'STUB_KEY';
 
 function randomBytes(length: number): Uint8Array {
 	const out = new Uint8Array(length);
@@ -532,9 +542,28 @@ export async function verifyPassword(
 	return timingSafeEqual(computed, hash);
 }
 
-/// decryption types
+async function hmacSha256(secret: string, input: string): Promise<string> {
+	const key = await crypto.subtle.importKey(
+		'raw',
+		textEncoder.encode(secret),
+		{ name: 'HMAC', hash: 'SHA-256' },
+		false,
+		['sign']
+	);
 
-export async function decryptUser(user: DBUser, masterKey?: string): Promise<User> {
+	const bytes = await crypto.subtle
+		.sign('HMAC', key, textEncoder.encode(input))
+		.then((digest) => new Uint8Array(digest));
+
+	return bytesToHex(bytes);
+}
+
+// #region Storing Types
+
+export async function decryptUser(
+	user: Omit<DBUser, 'email_lookup' | 'password_hash' | 'password_salt' | 'password_algorithm'>,
+	masterKey: string
+): Promise<User> {
 	const decrypted = await decrypt(
 		{
 			data: toUint8Array(user.data, 'data'),
@@ -544,7 +573,7 @@ export async function decryptUser(user: DBUser, masterKey?: string): Promise<Use
 			algorithm: toEncryptionAlgorithm(user.algorithm),
 			version: Number(user.version)
 		},
-		masterKey || STUB_KEY
+		masterKey
 	);
 
 	return {
@@ -555,7 +584,7 @@ export async function decryptUser(user: DBUser, masterKey?: string): Promise<Use
 	} as User;
 }
 
-export async function decryptUsers(users: DBUser[], masterKey?: string): Promise<User[]> {
+export async function decryptUsers(users: DBUser[], masterKey: string): Promise<User[]> {
 	const decrypted = await Promise.allSettled(
 		users.map(async (user) => await decryptUser(user, masterKey))
 	);
@@ -570,8 +599,6 @@ export async function decryptUsers(users: DBUser[], masterKey?: string): Promise
 
 	return decrypted.filter((r) => r.status === 'fulfilled').map((r) => r.value);
 }
-
-// database utilities
 
 /// returns successful results + errors, auto logs errors
 
@@ -589,6 +616,8 @@ export function results<T>(response: (QueryResult<T> | null)[]): [T[], string[]]
 	return [suceeded, failed];
 }
 
+// #endregion
+
 // user utilities
 
 async function generateSessionToken(): Promise<[string, string]> {
@@ -605,7 +634,7 @@ function parseTokenHashFromSessionKey(key: string): string | null {
 export async function createSessionToken(userId: string): Promise<string> {
 	const [token, tokenHash] = await generateSessionToken();
 
-	// Keep only a small number of active tokens per user.
+	// keep only a small number of active tokens per user
 	const prefix = `smoke:session_token_hash:${userId}:`;
 	const keys = await kv.keys(prefix);
 	if (keys.length >= MAX_SESSION_TOKENS_PER_USER) {
@@ -622,7 +651,7 @@ export async function createSessionToken(userId: string): Promise<string> {
 		);
 	}
 
-	// Store both forward and reverse indexes for O(1) lookup in ensureLoggedIn.
+	// store both forward and reverse indexes for O(1) lookup in ensureLoggedIn
 	const tokenHashKey = `${prefix}${tokenHash}`;
 	const tokenUserKey = `smoke:session_token_user:${tokenHash}`;
 	await Promise.all([
@@ -667,6 +696,8 @@ async function getSessionTokenLookup(
 	return { userId, tokenHash };
 }
 
+// #region Authentication
+
 export async function ensureLoggedIn(event: H3Event): Promise<User> {
 	const rawAuthHeader = event.node.req.headers['authorization'];
 	const authHeader = Array.isArray(rawAuthHeader) ? rawAuthHeader[0] : rawAuthHeader;
@@ -704,18 +735,9 @@ export async function ensureLoggedIn(event: H3Event): Promise<User> {
 	const env = event.context.cloudflare.env;
 	ensureCollegeDB(env);
 
-	if (!env.MASTER_KEY) {
-		throw createError({
-			statusCode: 500,
-			message: 'MASTER_KEY is not configured'
-		});
-	}
-
-	const user = await first<DBUser>(
-		lookup.userId,
-		'SELECT id, username, data, wrapped_dek, nonce, tag, algorithm, version, created_at FROM users WHERE id = ?',
-		[lookup.userId]
-	).then((row) => {
+	const user = await first<DBUser>(lookup.userId, 'SELECT * FROM users WHERE id = ?', [
+		lookup.userId
+	]).then((row) => {
 		if (!row) {
 			throw createError({
 				statusCode: 401,
@@ -727,3 +749,355 @@ export async function ensureLoggedIn(event: H3Event): Promise<User> {
 
 	return decryptUser(user, env.MASTER_KEY);
 }
+
+export async function ensureCanWriteTo(current: User, target: User): Promise<void> {
+	if (current.role === Role.Admin) return;
+	if (current.permissions?.includes(Permission.ManageUsers)) return;
+
+	if (current.id === target.id) {
+		if (current.permissions?.includes(Permission.ManageSelf)) return;
+
+		throw createError({
+			statusCode: 403,
+			message: 'You do not have permission to perform this action on yourself'
+		});
+	}
+
+	throw createError({
+		statusCode: 403,
+		message: 'You do not have permission to perform this action'
+	});
+}
+
+export async function logIn(
+	usernameOrEmail: string,
+	password: string,
+	event: H3Event
+): Promise<{ user: User; sessionToken: string }> {
+	const env = event.context.cloudflare.env;
+	ensureCollegeDB(env);
+
+	const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(usernameOrEmail);
+	const lookupKey = isEmail ? `email_lookup:${usernameOrEmail}` : `username:${usernameOrEmail}`;
+
+	let user: DBUser | null = null;
+	if (isEmail) {
+		// only compute hash if guarenteed to be an email
+		const email0 = usernameOrEmail.trim().toLowerCase();
+		const emailLookupHash = await hmacSha256(env.HMAC_SECRET, email0);
+		user = await firstByLookupKey<DBUser>(
+			lookupKey,
+			`SELECT id, username, data, wrapped_dek, nonce, tag, password_hash, password_salt, password_algorithm FROM users WHERE email_lookup = ?`,
+			[emailLookupHash]
+		);
+	} else {
+		const username0 = usernameOrEmail.trim();
+		user = await firstByLookupKey<DBUser>(
+			lookupKey,
+			`SELECT id, username, data, wrapped_dek, nonce, tag, password_hash, password_salt, password_algorithm FROM users WHERE username = ?`,
+			[username0]
+		);
+	}
+
+	// throw 400 if password_hash is empty (password must be set separately)
+	if (user && !user.password_hash) {
+		throw createError({
+			statusCode: 400,
+			message: 'Password must be set for this user before logging in'
+		});
+	}
+
+	if (!user) {
+		throw createError({
+			statusCode: 401,
+			message: 'Invalid username or password'
+		});
+	}
+
+	const passwordValid = await verifyPassword(
+		password,
+		toUint8Array(user.password_hash, 'password_hash'),
+		toUint8Array(user.password_salt, 'password_salt'),
+		user.password_algorithm as PasswordAlgorithm
+	);
+
+	if (!passwordValid) {
+		throw createError({
+			statusCode: 401,
+			message: 'Invalid username or password'
+		});
+	}
+
+	const sessionToken = await createSessionToken(user.id);
+	const decryptedUser = await decryptUser(user, env.MASTER_KEY);
+
+	return { user: decryptedUser, sessionToken };
+}
+
+export async function logOut(event: H3Event): Promise<void> {
+	const rawAuthHeader = event.node.req.headers['authorization'];
+	const authHeader = Array.isArray(rawAuthHeader) ? rawAuthHeader[0] : rawAuthHeader;
+	if (!authHeader || !authHeader.startsWith('Bearer ')) {
+		throw createError({
+			statusCode: 401,
+			message: 'Missing or invalid Authorization header'
+		});
+	}
+
+	const token = authHeader.slice(7).trim();
+	if (!token) {
+		throw createError({
+			statusCode: 401,
+			message: 'Invalid session token'
+		});
+	}
+
+	const lookup = await getSessionTokenLookup(token);
+	if (!lookup) {
+		throw createError({
+			statusCode: 401,
+			message: 'Invalid session token'
+		});
+	}
+
+	await kv.del(`smoke:session_token_user:${lookup.tokenHash}`);
+	await kv.del(`smoke:session_token_hash:${lookup.userId}:${lookup.tokenHash}`);
+}
+
+// #endregion
+
+// #region User CRUD
+
+function generateUserId() {
+	const uuid = crypto.randomUUID();
+	return uuid.replace(/-/g, '');
+}
+
+export async function createUser(
+	username: string,
+	email: string,
+	role: Role = Role.Agent,
+	env: any
+): Promise<{ id: string; sessionToken: string }> {
+	const id = generateUserId();
+	const now = new Date();
+
+	const encrypted = await encrypt(
+		{
+			email,
+			role,
+			permissions: DEFAULT_PERMISSIONS[role],
+			labels: [],
+			created_at: now,
+			updated_at: now
+		},
+		env.MASTER_KEY
+	);
+
+	const email0 = email.trim().toLowerCase();
+	const emailLookupHash = await hmacSha256(env.HMAC_SECRET, email0);
+
+	await run(
+		id,
+		`INSERT INTO users (id, username, email_lookup, data, wrapped_dek, nonce, tag, algorithm, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		[
+			id,
+			username,
+			emailLookupHash,
+			encrypted.ciphertext,
+			encrypted.wrapped_dek,
+			encrypted.nonce,
+			encrypted.tag,
+			encrypted.algorithm,
+			encrypted.version
+		]
+	);
+
+	const sessionToken = await createSessionToken(id);
+	return { id, sessionToken };
+}
+
+// not change password; admins create users so they need to set an initial password,
+// but changing passwords is a separate flow
+export async function setInitialPassword(userId: string, newPassword: string): Promise<void> {
+	const existing = await first<{ password_hash: Uint8Array | null }>(
+		userId,
+		`SELECT password_hash FROM users WHERE id = ?`,
+		[userId]
+	);
+
+	if (!existing) {
+		throw createError({
+			statusCode: 404,
+			message: 'User not found'
+		});
+	}
+
+	// ensure no password has been set yet
+	if (existing.password_hash) {
+		throw createError({
+			statusCode: 400,
+			message: 'Password has already been set for this user'
+		});
+	}
+
+	const { password_hash, password_salt, password_algorithm } = await hashPassword(newPassword);
+	await run(
+		userId,
+		`UPDATE users SET password_hash = ?, password_salt = ?, password_algorithm = ? WHERE id = ?`,
+		[password_hash, password_salt, password_algorithm, userId]
+	);
+}
+
+export async function patchUser(
+	user: User,
+	updates: Partial<Omit<User, 'id' | 'created_at' | 'updated_at'>>,
+	env: any
+): Promise<User> {
+	const data = { ...user, ...updates };
+	const encrypted = await encrypt(data, env.MASTER_KEY);
+
+	await run(
+		user.id,
+		`UPDATE users SET data = ?, wrapped_dek = ?, nonce = ?, tag = ?, algorithm = ?, version = ?, updated_at = ? WHERE id = ?`,
+		[
+			encrypted.ciphertext,
+			encrypted.wrapped_dek,
+			encrypted.nonce,
+			encrypted.tag,
+			encrypted.algorithm,
+			encrypted.version,
+			Math.floor(Date.now() / 1000),
+			user.id
+		]
+	);
+
+	if (updates.username) {
+		await run(user.id, `UPDATE users SET username = ? WHERE id = ?`, [updates.username, user.id]);
+	}
+
+	if (updates.email) {
+		// email was included as apart of encrypted payload, so just update the lookup hash
+		const email0 = updates.email.trim().toLowerCase();
+		const emailLookupHash = await hmacSha256(env.HMAC_SECRET, email0);
+		await run(user.id, `UPDATE users SET email_lookup = ? WHERE id = ?`, [
+			emailLookupHash,
+			user.id
+		]);
+	}
+
+	return { ...user, ...updates };
+}
+
+export async function deleteUser(userId: string): Promise<void> {
+	await Promise.allSettled([
+		run(userId, `DELETE FROM users WHERE id = ?`, [userId]),
+		deleteSessionTokens(userId)
+	]);
+}
+
+export async function listUsers(
+	env: any,
+	search: string,
+	page: number,
+	limit: number,
+	offset: number,
+	sort: keyof DBUser,
+	sort_direction: 'asc' | 'desc'
+): Promise<User[]> {
+	const masterKey = env.MASTER_KEY;
+	const cacheKey = `smoke:cache:user:list:${search}:${page}:${limit}:${sort}:${sort_direction}`;
+
+	return await cache(cacheKey, async () => {
+		const sql = search
+			? 'SELECT id, username, data, wrapped_dek, nonce, tag, algorithm, version, created_at FROM users WHERE username LIKE ?'
+			: 'SELECT id, username, data, wrapped_dek, nonce, tag, algorithm, version, created_at FROM users';
+		const bindings = search ? [`%${search}%`] : [];
+
+		const result = await allAllShardsGlobal<DBUser>(sql, bindings, {
+			sortBy: sort as keyof DBUser,
+			sortDirection: sort_direction as 'asc' | 'desc',
+			offset,
+			limit
+		});
+
+		return await decryptUsers(result.results, masterKey);
+	});
+}
+
+export async function getUserById(id: string, env: any): Promise<User | null> {
+	const cacheKey = `smoke:cache:user:${id}`;
+	return await cache(
+		cacheKey,
+		async () => {
+			const user = await first<DBUser>(
+				id,
+				`SELECT id, username, data, wrapped_dek, nonce, tag, password_hash, password_salt, password_algorithm FROM users WHERE id = ?`,
+				[id]
+			);
+
+			if (!user) return null;
+			return await decryptUser(user, env.MASTER_KEY);
+		},
+		14400
+	);
+}
+
+export async function getUserByUsername(username: string, env: any): Promise<User | null> {
+	const cacheKey = `smoke:cache:user:${username}`;
+	return await cache(
+		cacheKey,
+		async () => {
+			const user = await firstByLookupKey<DBUser>(
+				`username:${username}`,
+				`SELECT id, username, data, wrapped_dek, nonce, tag, password_hash, password_salt, password_algorithm FROM users WHERE username = ?`,
+				[username]
+			);
+
+			if (!user) return null;
+			return await decryptUser(user, env.MASTER_KEY);
+		},
+		14400
+	);
+}
+
+export async function getUserByEmail(email: string, env: any): Promise<User | null> {
+	const email0 = email.trim().toLowerCase();
+	const emailLookupHash = await hmacSha256(env.HMAC_SECRET, email0);
+
+	const cacheKey = `smoke:cache:user_email:${emailLookupHash}`;
+	return await cache(
+		cacheKey,
+		async () => {
+			const user = await firstByLookupKey<DBUser>(
+				`email_lookup:${emailLookupHash}`,
+				`SELECT id, username, data, wrapped_dek, nonce, tag, password_hash, password_salt, password_algorithm FROM users WHERE email_lookup = ?`,
+				[emailLookupHash]
+			);
+
+			if (!user) return null;
+			return await decryptUser(user, env.MASTER_KEY);
+		},
+		14400
+	);
+}
+
+// username, id, or 'current' for logged in user
+export async function getUserBy(value: string, event: H3Event): Promise<User | null> {
+	const env = event.context.cloudflare.env;
+	ensureCollegeDB(env);
+
+	if (value === 'current') {
+		return await ensureLoggedIn(event);
+	}
+
+	const isUsername = value.startsWith('@');
+	if (isUsername) {
+		const username = value.slice(1);
+		return await getUserByUsername(username, env);
+	}
+
+	return await getUserById(value, env);
+}
+
+// #endregion
