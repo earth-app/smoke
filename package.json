@@ -15,17 +15,17 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@cloudflare/workers-types": "^4.20260421.1",
+    "@cloudflare/workers-types": "^4.20260508.1",
     "@earth-app/collegedb": "^1.1.3",
-    "@libsql/client": "^0.17.2",
+    "@libsql/client": "^0.17.3",
     "@noble/hashes": "^2.2.0",
-    "@nuxt/icon": "^2.2.1",
+    "@nuxt/icon": "^2.2.2",
     "@nuxt/image": "^2.0.0",
-    "@nuxt/kit": "^4.4.2",
-    "@nuxt/ui": "^4.6.1",
+    "@nuxt/kit": "^4.4.4",
+    "@nuxt/ui": "^4.7.1",
     "@nuxthub/core": "^0.10.7",
     "@nuxtjs/google-fonts": "^3.2.0",
-    "@nuxtjs/i18n": "^10.2.4",
+    "@nuxtjs/i18n": "^10.3.0",
     "@nuxtjs/robots": "^5.7.1",
     "@nuxtjs/sitemap": "^7.6.0",
     "@nuxtjs/turnstile": "^1.1.2",
@@ -35,24 +35,24 @@
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
     "luxon": "^3.7.2",
-    "nuxt": "^4.4.2",
+    "nuxt": "^4.4.4",
     "nuxt-api-shield": "^0.10.2",
     "nuxt-schema-org": "^5.0.10",
     "nuxt-viewport": "^2.4.0",
-    "zod": "^4.3.6"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@iconify-json/material-symbols": "^1.2.67",
+    "@iconify-json/material-symbols": "^1.2.70",
     "@iconify-json/mdi": "^1.2.3",
-    "@nuxt/hints": "^1.0.3",
-    "@types/bun": "^1.3.12",
+    "@nuxt/hints": "^1.1.1",
+    "@types/bun": "^1.3.13",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
     "prettier": "^3.8.3",
     "prettier-plugin-organize-imports": "^4.3.0",
-    "prettier-plugin-tailwindcss": "^0.7.2",
-    "vue-tsc": "^3.2.7",
-    "wrangler": "^4.84.1"
+    "prettier-plugin-tailwindcss": "^0.7.4",
+    "vue-tsc": "^3.2.8",
+    "wrangler": "^4.90.0"
   },
   "lint-staged": {
     "*.{ts,js,vue,css,json,md}": "prettier --write"
