@@ -98,6 +98,9 @@ export const tickets = sqliteTable(
 		created_at: integer('created_at')
 			.notNull()
 			.default(sql`(strftime('%s', 'now'))`),
+		updated_at: integer('updated_at')
+			.notNull()
+			.default(sql`(strftime('%s', 'now'))`),
 
 		// unencrypted fields
 		description: text('description').notNull(),
@@ -108,16 +111,19 @@ export const tickets = sqliteTable(
 		assignees: text('assignees'), // comma-separated user IDs
 
 		// encrypted payloads
-		messages_data: blob('messages_data').notNull(),
-		attachments_data: blob('attachments_data').notNull(),
+		messages_data: blob('messages_data'),
+		messages_wrapped_dek: blob('messages_wrapped_dek'),
+		messages_nonce: blob('messages_nonce'),
+		messages_tag: blob('messages_tag'),
+		messages_algorithm: text('messages_algorithm'),
+		messages_version: integer('messages_version'),
 
-		// envelope encryption data
-		wrapped_dek: blob('wrapped_dek').notNull(),
-		nonce: blob('nonce').notNull(),
-		tag: blob('tag').notNull(),
-
-		algorithm: text('algorithm').notNull(),
-		version: integer('version').notNull()
+		attachments_data: blob('attachments_data'),
+		attachments_wrapped_dek: blob('attachments_wrapped_dek'),
+		attachments_nonce: blob('attachments_nonce'),
+		attachments_tag: blob('attachments_tag'),
+		attachments_algorithm: text('attachments_algorithm'),
+		attachments_version: integer('attachments_version')
 	},
 	(table) => [
 		index('idx_tickets_title').on(table.title),
@@ -127,7 +133,8 @@ export const tickets = sqliteTable(
 		index('idx_tickets_assignees').on(table.assignees),
 		index('idx_tickets_status').on(table.status),
 		index('idx_tickets_priority').on(table.priority),
-		index('idx_tickets_created_at').on(table.created_at)
+		index('idx_tickets_created_at').on(table.created_at),
+		index('idx_tickets_updated_at').on(table.updated_at)
 	]
 );
 

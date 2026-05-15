@@ -31,11 +31,13 @@ export enum Permission {
 	// ticket permissions
 	ReplyTicket = 'reply_ticket',
 	CreateTicket = 'create_ticket',
-	DeleteTicket = 'delete_ticket',
+	ManageTicket = 'manage_ticket',
 	OpenTicket = 'open_ticket',
 	CloseTicket = 'close_ticket',
-	ChangeTicketLabels = 'change_ticket_labels',
-	ManageTicketLabels = 'manage_ticket_labels',
+	ChangeLabels = 'change_labels',
+	ManageLabels = 'manage_labels',
+	CreateTicketMessages = 'create_ticket_messages',
+	ManageTicketMessages = 'manage_ticket_messages',
 	LinkIssue = 'link_issue',
 	AddEmail = 'add_email',
 	RemoveEmail = 'remove_email',
@@ -72,8 +74,8 @@ export const ALL_PERMISSIONS: Record<Permission, PermissionData> = {
 		description: 'Allows the user to create new tickets.',
 		category: 'tickets'
 	},
-	[Permission.DeleteTicket]: {
-		description: 'Allows the user to delete tickets.',
+	[Permission.ManageTicket]: {
+		description: 'Allows the user to update and delete tickets.',
 		category: 'tickets'
 	},
 	[Permission.OpenTicket]: {
@@ -84,12 +86,20 @@ export const ALL_PERMISSIONS: Record<Permission, PermissionData> = {
 		description: 'Allows the user to close open tickets.',
 		category: 'tickets'
 	},
-	[Permission.ChangeTicketLabels]: {
-		description: 'Allows the user to change ticket labels.',
+	[Permission.CreateTicketMessages]: {
+		description: 'Allows the user to create, update, and delete their own messages on tickets.',
 		category: 'tickets'
 	},
-	[Permission.ManageTicketLabels]: {
-		description: 'Allows the user to create and delete ticket labels.',
+	[Permission.ManageTicketMessages]: {
+		description: 'Allows the user to update and delete any message on tickets.',
+		category: 'tickets'
+	},
+	[Permission.ChangeLabels]: {
+		description: 'Allows the user to change the labels on tickets.',
+		category: 'tickets'
+	},
+	[Permission.ManageLabels]: {
+		description: 'Allows the user to create and delete labels.',
 		category: 'tickets'
 	},
 	[Permission.LinkIssue]: {
@@ -142,19 +152,21 @@ export const DEFAULT_PERMISSIONS: Record<Role, Permission[]> = {
 		Permission.ReplyTicket,
 		Permission.CreateTicket,
 		Permission.OpenTicket,
+		Permission.CreateTicketMessages,
 		Permission.CloseTicket,
-		Permission.ChangeTicketLabels,
+		Permission.ChangeLabels,
 		Permission.AddEmail,
 		Permission.RemoveEmail
 	],
 	[Role.Manager]: [
 		Permission.ReplyTicket,
 		Permission.CreateTicket,
-		Permission.DeleteTicket,
+		Permission.ManageTicket,
 		Permission.OpenTicket,
 		Permission.CloseTicket,
-		Permission.ChangeTicketLabels,
-		Permission.ManageTicketLabels,
+		Permission.ChangeLabels,
+		Permission.ManageLabels,
+		Permission.ManageTicketMessages,
 		Permission.LinkIssue,
 		Permission.AddEmail,
 		Permission.RemoveEmail,

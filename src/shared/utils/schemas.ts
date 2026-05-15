@@ -1,4 +1,6 @@
 import z from 'zod';
+import { TicketPriority, TicketStatus } from '~/shared/types/ticket';
+import { Permission, Role } from '~/shared/types/user';
 
 // #region primitives
 
@@ -117,5 +119,74 @@ export const userPatchBody = z
 		labels: z.array(label).optional()
 	})
 	.describe('The body of a PATCH request to update a user');
+
+export const ticketIdParam = z.coerce.number().int().positive().describe('A numerical ticket ID');
+
+export const ticketMessageIdParam = z.coerce
+	.number()
+	.int()
+	.nonnegative()
+	.describe('A numerical ticket message ID');
+
+export const ticketStatus = z.enum(Object.values(TicketStatus));
+
+export const ticketPriority = z.enum(Object.values(TicketPriority));
+
+export const ticketActor = z.discriminatedUnion('kind', [
+	z.object({
+		kind: z.literal('user'),
+		id: id,
+		username,
+		email: email.optional(),
+		name: user.shape.name.optional(),
+		avatar_url
+	}),
+	z.object({
+		kind: z.literal('customer'),
+		id: z.coerce.number().int().nonnegative(),
+		email: email.optional(),
+		name: z.string().min(1).max(128).optional(),
+		avatar_url
+	})
+]);
+
+export const ticketAttachment = z.object({
+	file_name: z.string().min(1).max(255),
+	mimetype: z.string().min(1).max(255),
+	data: z.string().min(1)
+});
+
+export const ticketCreateBody = z
+	.object({
+		title: z.string().min(1).max(200),
+		description: z.string().min(1).max(10_000),
+		customer_id: z.coerce.number().int().nonnegative(),
+		status: ticketStatus.optional(),
+		priority: ticketPriority.optional(),
+		labels: z.array(z.coerce.number().int().nonnegative()).optional(),
+		assignee_ids: z.array(id).optional()
+	})
+	.describe('The body of a POST request to create a new ticket');
+
+export const ticketPatchBody = z
+	.object({
+		title: z.string().min(1).max(200).optional(),
+		description: z.string().min(1).max(10_000).optional(),
+		customer_id: z.coerce.number().int().nonnegative().optional(),
+		status: ticketStatus.optional(),
+		priority: ticketPriority.optional(),
+		labels: z.array(z.coerce.number().int().nonnegative()).optional(),
+		assignee_ids: z.array(id).optional()
+	})
+	.describe('The body of a PATCH request to update a ticket');
+
+export const ticketMessageCreateBody = z
+	.object({
+		message: z.string().min(1).max(10_000),
+		reply_to: z.coerce.number().int().nonnegative().optional(),
+		sender: ticketActor.optional(),
+		attachments: z.array(ticketAttachment).optional()
+	})
+	.describe('The body of a POST request to append a ticket message');
 
 // #endregion
