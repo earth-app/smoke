@@ -37,7 +37,7 @@
     "luxon": "^3.7.2",
     "nuxt": "^4.4.5",
     "nuxt-api-shield": "^0.10.2",
-    "nuxt-schema-org": "^5.0.10",
+    "nuxt-schema-org": "^6.0.0",
     "nuxt-viewport": "^2.4.0",
     "zod": "^4.4.3"
   },
