@@ -79,6 +79,8 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Build Project
         run: bun run build
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       - name: Archive Build Artifacts
         id: archive
         uses: actions/upload-artifact@v6
