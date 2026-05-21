@@ -19,5 +19,8 @@ logs
 .DS_Store
 .fleet
 .idea
-
+.claude
 .env.local
+
+# Testing
+coverage/
