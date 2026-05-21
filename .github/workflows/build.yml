@@ -35,6 +35,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
       - name: Install dependencies
