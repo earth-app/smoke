@@ -1,5 +1,4 @@
-import type { DBUser } from 'hub:db:schema';
-import { ensureCollegeDB } from 'hub:db:schema';
+import { DBUser, ensureCollegeDB } from '~/server/db/schema';
 import { listUsers, query } from '~/server/utils';
 
 export default defineEventHandler(async (event) => {
