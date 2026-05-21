@@ -1,5 +1,5 @@
 import z from 'zod';
-import { getTicketById } from '~/server/utils';
+import { getOptionalLoggedIn, getTicketById } from '~/server/utils';
 import * as schemas from '~/shared/utils/schemas';
 
 export default defineEventHandler(async (event) => {
@@ -7,7 +7,8 @@ export default defineEventHandler(async (event) => {
 		event,
 		z.object({ id: schemas.ticketIdParam }).parse
 	);
-	const ticket = await getTicketById(id, event.context.cloudflare.env);
+	const current = await getOptionalLoggedIn(event);
+	const ticket = await getTicketById(id, event.context.cloudflare.env, current);
 
 	if (!ticket) {
 		throw createError({

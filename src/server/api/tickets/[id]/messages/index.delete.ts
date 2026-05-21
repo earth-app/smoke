@@ -20,6 +20,10 @@ export default defineEventHandler(async (event) => {
 	try {
 		await clearTicketMessages(id, event.context.cloudflare.env);
 	} catch (error) {
+		if (typeof error === 'object' && error !== null && 'statusCode' in error) {
+			throw error;
+		}
+
 		throw createError({
 			statusCode: 500,
 			message: 'Failed to clear ticket messages',

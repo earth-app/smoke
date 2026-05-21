@@ -1,5 +1,6 @@
 import z from 'zod';
 import { deleteTicketMessage, ensureLoggedIn, getTicketMessage } from '~/server/utils';
+import { Permission } from '~/shared/types/user';
 import * as schemas from '~/shared/utils/schemas';
 
 export default defineEventHandler(async (event) => {
@@ -11,7 +12,7 @@ export default defineEventHandler(async (event) => {
 	);
 
 	try {
-		const message = await getTicketMessage(id, messageId, event.context.cloudflare.env);
+		const message = await getTicketMessage(id, messageId, event.context.cloudflare.env, current);
 		if (
 			message.sender.id !== current.id &&
 			!current.permissions.includes(Permission.ManageTicketMessages)
@@ -24,6 +25,10 @@ export default defineEventHandler(async (event) => {
 
 		await deleteTicketMessage(id, messageId, event.context.cloudflare.env);
 	} catch (error) {
+		if (typeof error === 'object' && error !== null && 'statusCode' in error) {
+			throw error;
+		}
+
 		throw createError({
 			statusCode: 500,
 			message: 'Failed to delete ticket message',

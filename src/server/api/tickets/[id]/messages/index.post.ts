@@ -1,5 +1,5 @@
 import z from 'zod';
-import { addTicketMessage, ensureLoggedIn } from '~/server/utils';
+import { addTicketMessage, ensureLoggedIn, getTicketById } from '~/server/utils';
 import { Permission } from '~/shared/types/user';
 import * as schemas from '~/shared/utils/schemas';
 
@@ -17,6 +17,13 @@ export default defineEventHandler(async (event) => {
 		z.object({ id: schemas.ticketIdParam }).parse
 	);
 	const body = await readValidatedBody(event, schemas.ticketMessageCreateBody.parse);
+	const ticket = await getTicketById(id, event.context.cloudflare.env, current);
+	if (!ticket) {
+		throw createError({
+			statusCode: 404,
+			message: 'Ticket not found'
+		});
+	}
 
 	try {
 		return await addTicketMessage(
@@ -37,6 +44,10 @@ export default defineEventHandler(async (event) => {
 			event.context.cloudflare.env
 		);
 	} catch (error) {
+		if (typeof error === 'object' && error !== null && 'statusCode' in error) {
+			throw error;
+		}
+
 		throw createError({
 			statusCode: 500,
 			message: 'Failed to add ticket message',

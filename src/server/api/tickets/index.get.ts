@@ -1,13 +1,39 @@
-import { ensureCollegeDB } from 'hub:db:schema';
-import { listTickets } from '~/server/utils';
+import { DBTicket, ensureCollegeDB } from '~/server/db/schema';
+import { getOptionalLoggedIn, listTickets, query } from '~/server/utils';
 
 export default defineEventHandler(async (event) => {
-	const env = event.context.cloudflare.env;
-	ensureCollegeDB(env);
-
 	try {
-		return await listTickets(env);
+		const { search, page, limit, offset, sort, sort_direction } = query(event, [
+			'title',
+			'created_at',
+			'updated_at',
+			'description',
+			'customer_id',
+			'status',
+			'priority',
+			'labels',
+			'assignees'
+		]);
+
+		const env = event.context.cloudflare.env;
+		ensureCollegeDB(env);
+		const current = await getOptionalLoggedIn(event);
+
+		return await listTickets(
+			env,
+			search,
+			page,
+			limit,
+			offset,
+			sort as keyof DBTicket,
+			sort_direction,
+			current
+		);
 	} catch (error) {
+		if (typeof error === 'object' && error !== null && 'statusCode' in error) {
+			throw error;
+		}
+
 		throw createError({
 			statusCode: 500,
 			message: 'Failed to list tickets',

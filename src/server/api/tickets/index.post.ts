@@ -12,10 +12,20 @@ export default defineEventHandler(async (event) => {
 	}
 
 	const body = await readValidatedBody(event, schemas.ticketCreateBody.parse);
+	if (body.private && !current.permissions.includes(Permission.TogglePrivate)) {
+		throw createError({
+			statusCode: 403,
+			message: 'You do not have permission to mark tickets as private'
+		});
+	}
 
 	try {
 		return await createTicket(body, event.context.cloudflare.env);
 	} catch (error) {
+		if (typeof error === 'object' && error !== null && 'statusCode' in error) {
+			throw error;
+		}
+
 		throw createError({
 			statusCode: 500,
 			message: 'Failed to create ticket',

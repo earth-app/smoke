@@ -1,5 +1,6 @@
 import z from 'zod';
 import { ensureLoggedIn, getTicketById, patchTicket } from '~/server/utils';
+import { Permission } from '~/shared/types/user';
 import * as schemas from '~/shared/utils/schemas';
 
 export default defineEventHandler(async (event) => {
@@ -15,7 +16,7 @@ export default defineEventHandler(async (event) => {
 		event,
 		z.object({ id: schemas.ticketIdParam }).parse
 	);
-	const ticket = await getTicketById(id, event.context.cloudflare.env);
+	const ticket = await getTicketById(id, event.context.cloudflare.env, user);
 
 	if (!ticket) {
 		throw createError({
@@ -30,6 +31,10 @@ export default defineEventHandler(async (event) => {
 	try {
 		return await patchTicket(id, body, event.context.cloudflare.env);
 	} catch (error) {
+		if (typeof error === 'object' && error !== null && 'statusCode' in error) {
+			throw error;
+		}
+
 		throw createError({
 			statusCode: 500,
 			message: 'Failed to update ticket',
