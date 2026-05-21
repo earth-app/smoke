@@ -2,14 +2,14 @@ name: Build and Test
 
 on:
   push:
-    branches: [main, master, develop]
+    branches: [master, ver/*]
   pull_request:
-    branches: [main, master, develop]
+    branches: [master, ver/*]
 
 jobs:
   format:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     permissions:
       contents: read
@@ -24,18 +24,51 @@ jobs:
       - name: Run Prettier
         run: bun run prettier:check
 
-  build:
+  test:
     runs-on: ubuntu-latest
     needs: [format]
-    timeout-minutes: 20
+    timeout-minutes: 120
 
     permissions:
       contents: read
       packages: read
+      pull-requests: write
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Run Tests with Coverage
+        run: bun run test:coverage
+      - name: Archive Test Coverage
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-report
+          path: coverage/lcov-report
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v6
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: earth-app/smoke
+          fail_ci_if_error: true
+          flags: unittests
+          files: |
+            coverage/lcov.info
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [test, format]
+    timeout-minutes: 60
+
+    permissions:
+      contents: read
+      packages: read
+      attestations: write
+
+    steps:
+      - uses: actions/checkout@v6
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -44,3 +77,16 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Build Project
         run: bun run build
+      - name: Archive Build Artifacts
+        id: archive
+        uses: actions/upload-artifact@v6
+        with:
+          name: build-artifacts-${{ github.run_id }}
+          path: .output/
+          overwrite: true
+      - name: Attest Build Artifacts
+        if: success() || failure()
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-name: smoke-build-${{ github.run_id }}
+          subject-digest: sha256:${{ steps.archive.outputs.artifact-digest }}

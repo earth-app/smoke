@@ -1,0 +1,343 @@
+import {
+	createInMemoryKVProvider,
+	createInMemorySQLProvider,
+	type InMemoryKVStorage,
+	type InMemorySQLDatabase
+} from '@earth-app/collegedb';
+import { afterEach, beforeEach, vi } from 'vitest';
+import { TicketPriority, TicketStatus } from '../../src/shared/types/ticket';
+import { Permission, Role, type Label } from '../../src/shared/types/user';
+
+export const TEST_ENV = {
+	MASTER_KEY: 'm'.repeat(32),
+	HMAC_SECRET: 'h'.repeat(32)
+};
+
+export const MANAGER_PERMISSIONS: Permission[] = [
+	Permission.ReplyTicket,
+	Permission.CreateTicket,
+	Permission.ManageTicket,
+	Permission.OpenTicket,
+	Permission.CloseTicket,
+	Permission.ChangeLabels,
+	Permission.ManageLabels,
+	Permission.ManageTicketMessages,
+	Permission.LinkIssue,
+	Permission.AddEmail,
+	Permission.RemoveEmail,
+	Permission.ChangeCustomerName,
+	Permission.ChangeCustomerTags,
+	Permission.ManageSelf,
+	Permission.ManageUsers,
+	Permission.ChangeUserLabels,
+	Permission.TogglePrivate
+];
+
+export const TABLES_SQL = [
+	`CREATE TABLE IF NOT EXISTS users (
+		id TEXT PRIMARY KEY,
+		username TEXT NOT NULL,
+		created_at INTEGER NOT NULL,
+		updated_at INTEGER NOT NULL,
+		password_hash BLOB,
+		password_salt BLOB,
+		password_algorithm TEXT,
+		data BLOB NOT NULL,
+		email_lookup TEXT NOT NULL,
+		wrapped_dek BLOB NOT NULL,
+		nonce BLOB NOT NULL,
+		tag BLOB NOT NULL,
+		algorithm TEXT NOT NULL,
+		version INTEGER NOT NULL
+	)`,
+	`CREATE TABLE IF NOT EXISTS customers (
+		id INTEGER PRIMARY KEY,
+		avatar_url TEXT,
+		created_at INTEGER NOT NULL,
+		data BLOB NOT NULL,
+		wrapped_dek BLOB NOT NULL,
+		nonce BLOB NOT NULL,
+		tag BLOB NOT NULL,
+		algorithm TEXT NOT NULL,
+		version INTEGER NOT NULL
+	)`,
+	`CREATE TABLE IF NOT EXISTS labels (
+		id INTEGER PRIMARY KEY,
+		name TEXT NOT NULL,
+		color TEXT,
+		created_at INTEGER NOT NULL
+	)`,
+	`CREATE TABLE IF NOT EXISTS tickets (
+		id INTEGER PRIMARY KEY,
+		title TEXT NOT NULL,
+		created_at INTEGER NOT NULL,
+		updated_at INTEGER NOT NULL,
+		description TEXT NOT NULL,
+		customer_id INTEGER NOT NULL,
+		status TEXT NOT NULL,
+		priority TEXT NOT NULL,
+		labels TEXT,
+		assignees TEXT,
+		private INTEGER NOT NULL,
+		messages_data BLOB,
+		messages_wrapped_dek BLOB,
+		messages_nonce BLOB,
+		messages_tag BLOB,
+		messages_algorithm TEXT,
+		messages_version INTEGER,
+		attachments_data BLOB,
+		attachments_wrapped_dek BLOB,
+		attachments_nonce BLOB,
+		attachments_tag BLOB,
+		attachments_algorithm TEXT,
+		attachments_version INTEGER
+	)`
+];
+
+export type NuxtHubKvAdapter = {
+	get<T = unknown>(key: string, type?: 'text' | 'json'): Promise<T | null>;
+	set(key: string, value: unknown, options?: { ttl?: number }): Promise<void>;
+	has(key: string): Promise<boolean>;
+	del(key: string): Promise<void>;
+	keys(prefix?: string): Promise<string[]>;
+};
+
+function createNuxtHubKvAdapter(storage: InMemoryKVStorage): NuxtHubKvAdapter {
+	return {
+		async get<T = unknown>(key: string, type: 'text' | 'json' = 'text'): Promise<T | null> {
+			if (type === 'json') {
+				return (await storage.get<T>(key, 'json')) ?? null;
+			}
+			return (await storage.get(key, 'text')) as T | null;
+		},
+		async set(key: string, value: unknown, options?: { ttl?: number }): Promise<void> {
+			await storage.set(key, value, options);
+		},
+		async has(key: string): Promise<boolean> {
+			return (await storage.get(key, 'text')) != null;
+		},
+		async del(key: string): Promise<void> {
+			await storage.delete(key);
+		},
+		async keys(prefix = ''): Promise<string[]> {
+			return await storage.keys(prefix);
+		}
+	};
+}
+
+export type RouteRuntime = {
+	db: InMemorySQLDatabase;
+	kv: InMemoryKVStorage;
+	hubKv: NuxtHubKvAdapter;
+	env: typeof TEST_ENV;
+};
+
+// Cloudflare Workers run a single shared isolate per request, so it's fine to
+// reuse a module-scoped runtime; we just reset its contents before each test.
+let runtime: RouteRuntime | null = null;
+
+vi.mock('hub:db', () => ({
+	get db() {
+		if (!runtime) throw new Error('Test runtime not initialized; call setupApiRuntime() first.');
+		return runtime.db;
+	}
+}));
+
+vi.mock('hub:kv', () => ({
+	get kv() {
+		if (!runtime) throw new Error('Test runtime not initialized; call setupApiRuntime() first.');
+		return runtime.hubKv;
+	}
+}));
+
+async function buildRuntime(): Promise<RouteRuntime> {
+	const db = createInMemorySQLProvider();
+	const kv = createInMemoryKVProvider();
+	const hubKv = createNuxtHubKvAdapter(kv);
+
+	for (const statement of TABLES_SQL) {
+		const result = await db.prepare(statement).run();
+		if (!result.success) {
+			throw new Error(`Failed to seed schema: ${result.error}`);
+		}
+	}
+
+	return { db, kv, hubKv, env: TEST_ENV };
+}
+
+export async function setupApiRuntime(): Promise<RouteRuntime> {
+	const { resetConfig, clearMigrationCache } = await import('@earth-app/collegedb');
+	resetConfig();
+	clearMigrationCache();
+
+	const { resetCollegeDB, ensureCollegeDB } = await import('../../src/server/db/schema');
+	resetCollegeDB();
+
+	runtime = await buildRuntime();
+	ensureCollegeDB(runtime.env);
+	return runtime;
+}
+
+export async function teardownApiRuntime(): Promise<void> {
+	const { resetConfig, clearMigrationCache } = await import('@earth-app/collegedb');
+	resetConfig();
+	clearMigrationCache();
+
+	const { resetCollegeDB } = await import('../../src/server/db/schema');
+	resetCollegeDB();
+
+	runtime = null;
+}
+
+export function getRuntime(): RouteRuntime {
+	if (!runtime) throw new Error('Test runtime not initialized; call setupApiRuntime() first.');
+	return runtime;
+}
+
+export function eventFor(env: typeof TEST_ENV, token?: string) {
+	return {
+		node: { req: { headers: token ? { authorization: `Bearer ${token}` } : {} } },
+		context: { cloudflare: { env } }
+	} as any;
+}
+
+export async function importRoute<T = (event: any) => Promise<unknown>>(path: string): Promise<T> {
+	const module = await import(path);
+	return module.default as T;
+}
+
+export function mockBody(value: unknown): void {
+	const m = (globalThis as any).readValidatedBody as ReturnType<typeof vi.fn>;
+	m.mockResolvedValue(value);
+}
+
+export function mockParams(value: Record<string, unknown>): void {
+	const m = (globalThis as any).getValidatedRouterParams as ReturnType<typeof vi.fn>;
+	m.mockResolvedValue(value);
+}
+
+export function mockQuery(value: Record<string, unknown>): void {
+	const m = (globalThis as any).getQuery as ReturnType<typeof vi.fn>;
+	m.mockReturnValue(value);
+}
+
+export function mockCookie(value: string | null): void {
+	const m = (globalThis as any).getCookie as ReturnType<typeof vi.fn>;
+	m.mockReturnValue(value);
+}
+
+// #region Seed helpers — these go directly through the application code so test
+// data is created exactly the way production routes would create it.
+
+export async function seedUser(
+	rt: RouteRuntime,
+	options: {
+		username: string;
+		email: string;
+		role?: Role;
+		password?: string;
+		permissions?: Permission[];
+	}
+): Promise<{ id: string; sessionToken: string }> {
+	const utils = await import('../../src/server/utils');
+	const created = await utils.createUser(
+		options.username,
+		options.email,
+		options.role ?? Role.Agent,
+		rt.env
+	);
+
+	if (options.password) {
+		await utils.setInitialPassword(created.id, options.password);
+	}
+
+	if (options.permissions) {
+		const fetched = await utils.getUserById(created.id, rt.env);
+		if (!fetched) throw new Error('Failed to load seeded user');
+		await utils.patchUser(fetched, { permissions: options.permissions }, rt.env);
+	}
+
+	return created;
+}
+
+export async function seedManager(
+	rt: RouteRuntime,
+	username = 'manager_user',
+	email = 'manager@example.com'
+): Promise<{ id: string; sessionToken: string }> {
+	return await seedUser(rt, {
+		username,
+		email,
+		role: Role.Manager,
+		permissions: MANAGER_PERMISSIONS
+	});
+}
+
+export async function seedAgent(
+	rt: RouteRuntime,
+	username = 'agent_user',
+	email = 'agent@example.com'
+): Promise<{ id: string; sessionToken: string }> {
+	return await seedUser(rt, { username, email, role: Role.Agent });
+}
+
+export async function seedCustomer(
+	rt: RouteRuntime,
+	options: {
+		name: string;
+		email: string;
+		avatar_url?: string;
+		tags?: Label[];
+	}
+): Promise<{ id: number }> {
+	const utils = await import('../../src/server/utils');
+	const created = await utils.createCustomer(options, rt.env);
+	return { id: created.id };
+}
+
+export async function seedLabel(_rt: RouteRuntime, name: string, color?: string): Promise<Label> {
+	const utils = await import('../../src/server/utils');
+	return await utils.createLabel(name, color);
+}
+
+export async function seedTicket(
+	rt: RouteRuntime,
+	options: {
+		title: string;
+		description: string;
+		customer_id: number;
+		status?: TicketStatus;
+		priority?: TicketPriority;
+		labels?: number[];
+		assignee_ids?: string[];
+		private?: boolean;
+	}
+): Promise<{ id: number }> {
+	const utils = await import('../../src/server/utils');
+	const ticket = await utils.createTicket(
+		{
+			title: options.title,
+			description: options.description,
+			customer_id: options.customer_id,
+			status: options.status,
+			priority: options.priority,
+			labels: options.labels,
+			assignee_ids: options.assignee_ids,
+			private: options.private
+		},
+		rt.env
+	);
+	return { id: ticket.id };
+}
+
+// #endregion
+
+// Each spec re-runs setup before every test (a brand-new DB + KV + a fresh
+// CollegeDB init), mirroring the per-request lifecycle of a Workers isolate.
+beforeEach(async () => {
+	await setupApiRuntime();
+});
+
+afterEach(async () => {
+	await teardownApiRuntime();
+});

@@ -1,0 +1,35 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "smoke-test",
+	"main": "./src/server/api/status.get.ts",
+	"compatibility_date": "2026-05-18",
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_id": "00000000-0000-0000-0000-000000000001"
+		},
+		{
+			"binding": "DB_SECONDARY",
+			"database_id": "00000000-0000-0000-0000-000000000002"
+		},
+		{
+			"binding": "DB_TERTIARY",
+			"database_id": "00000000-0000-0000-0000-000000000003"
+		}
+	],
+	"kv_namespaces": [
+		{
+			"binding": "KV",
+			"id": "00000000000000000000000000000001"
+		},
+		{
+			"binding": "CACHE",
+			"id": "00000000000000000000000000000002"
+		}
+	],
+	"send_email": [
+		{
+			"name": "EMAIL"
+		}
+	]
+}
