@@ -84,6 +84,7 @@ jobs:
           name: build-artifacts-${{ github.run_id }}
           path: .output/
           overwrite: true
+          include-hidden-files: true
       - name: Attest Build Artifacts
         if: success() || failure()
         uses: actions/attest-build-provenance@v3
