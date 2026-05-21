@@ -2,8 +2,6 @@ import {
 	allAllShardsGlobal,
 	first,
 	firstByLookupKey,
-	insert,
-	InsertResult,
 	QueryResult,
 	run
 } from '@earth-app/collegedb';
@@ -25,18 +23,29 @@ import {
 	TicketStatus,
 	TicketThread
 } from '~/shared/types/ticket';
-import { DEFAULT_PERMISSIONS, Label, Permission, Role, type User } from '~/shared/types/user';
-import { ensureCollegeDB, type DBLabel, type DBTicket, type DBUser } from './db/schema';
+import {
+	DEFAULT_PERMISSIONS,
+	Label,
+	Permission,
+	Role,
+	type Customer,
+	type User
+} from '~/shared/types/user';
+import {
+	ensureCollegeDB,
+	type DBCustomer,
+	type DBLabel,
+	type DBTicket,
+	type DBUser
+} from './db/schema';
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
-// #region Constants and Types
-
 const ENCRYPTION_VERSION = 1;
 const WRAPPED_DEK_VERSION = 1;
-
 const AES_GCM_KEY_BYTES = 32;
+
 const AES_GCM_NONCE_BYTES = 12;
 const AES_GCM_TAG_BYTES = 16;
 const WRAP_SALT_BYTES = 16;
@@ -46,6 +55,7 @@ const BCRYPT_ROUNDS = 12;
 const SESSION_TOKEN_BYTES = 48;
 const SESSION_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 14;
 const MAX_SESSION_TOKENS_PER_USER = 5;
+const CUSTOMER_EMAIL_LOOKUP_PREFIX = 'smoke:customer_email_hash:';
 
 export type PasswordAlgorithm = 'bcrypt' | 'argon2id' | 'scrypt';
 export type EncryptionAlgorithm = PasswordAlgorithm | 'aes-256-gcm';
@@ -77,8 +87,12 @@ export async function cache<T>(
 	return data;
 }
 
-export function query(event: H3Event, sortFields: string[] = ['created_at']) {
-	const { search, page, limit, sort, sort_direction } = getQuery(event);
+function isHttpError(error: unknown): error is { statusCode?: number } {
+	return typeof error === 'object' && error !== null && 'statusCode' in error;
+}
+
+export function primitiveQuery(event: H3Event, sortFields: string[] = ['created_at']) {
+	const { search, sort, sort_direction } = getQuery(event);
 
 	const search0 = search?.toString() || '';
 	if (search0.length > 120) {
@@ -86,24 +100,6 @@ export function query(event: H3Event, sortFields: string[] = ['created_at']) {
 			statusCode: 400,
 			message: 'Search parameter too long, max is 120 characters',
 			data: { search: search0 }
-		});
-	}
-
-	const page0 = page ? parseInt(page as string, 10) : 1;
-	if (isNaN(page0) || page0 < 1) {
-		throw createError({
-			statusCode: 400,
-			message: 'Invalid page parameter, must be a positive integer',
-			data: { page }
-		});
-	}
-
-	const limit0 = limit ? parseInt(limit as string, 10) : 10;
-	if (isNaN(limit0) || limit0 < 1 || limit0 > 100) {
-		throw createError({
-			statusCode: 400,
-			message: 'Invalid limit parameter, must be a positive integer between 1 and 100',
-			data: { limit }
 		});
 	}
 
@@ -128,11 +124,40 @@ export function query(event: H3Event, sortFields: string[] = ['created_at']) {
 
 	return {
 		search: search0,
+		sort: sort0,
+		sort_direction: sort_direction0
+	};
+}
+
+export function query(event: H3Event, sortFields: string[] = ['created_at']) {
+	const { search, sort, sort_direction } = primitiveQuery(event, sortFields);
+	const { page, limit } = getQuery(event);
+
+	const page0 = page ? parseInt(page as string, 10) : 1;
+	if (isNaN(page0) || page0 < 1) {
+		throw createError({
+			statusCode: 400,
+			message: 'Invalid page parameter, must be a positive integer',
+			data: { page }
+		});
+	}
+
+	const limit0 = limit ? parseInt(limit as string, 10) : 10;
+	if (isNaN(limit0) || limit0 < 1 || limit0 > 100) {
+		throw createError({
+			statusCode: 400,
+			message: 'Invalid limit parameter, must be a positive integer between 1 and 100',
+			data: { limit }
+		});
+	}
+
+	return {
+		search,
 		page: page0,
 		limit: limit0,
 		offset: (page0 - 1) * limit0,
-		sort: sort0,
-		sort_direction: sort_direction0
+		sort,
+		sort_direction
 	};
 }
 
@@ -574,31 +599,41 @@ async function hmacSha256(secret: string, input: string): Promise<string> {
 
 // #region Storing Types
 
-export async function decryptUser(
+async function decryptUser(
 	user: Omit<DBUser, 'email_lookup' | 'password_hash' | 'password_salt' | 'password_algorithm'>,
 	masterKey: string
 ): Promise<User> {
-	const decrypted = await decrypt(
-		{
-			data: toUint8Array(user.data, 'data'),
-			wrapped_dek: toUint8Array(user.wrapped_dek, 'wrapped_dek'),
-			nonce: toUint8Array(user.nonce, 'nonce'),
-			tag: toUint8Array(user.tag, 'tag'),
-			algorithm: toEncryptionAlgorithm(user.algorithm),
-			version: Number(user.version)
-		},
-		masterKey
+	const decrypted = asObject(
+		await decrypt(
+			{
+				data: toUint8Array(user.data, 'data'),
+				wrapped_dek: toUint8Array(user.wrapped_dek, 'wrapped_dek'),
+				nonce: toUint8Array(user.nonce, 'nonce'),
+				tag: toUint8Array(user.tag, 'tag'),
+				algorithm: toEncryptionAlgorithm(user.algorithm),
+				version: Number(user.version)
+			},
+			masterKey
+		)
 	);
 
 	return {
 		id: user.id,
 		username: user.username,
+		email: typeof decrypted.email === 'string' ? decrypted.email : '',
+		name: typeof decrypted.name === 'string' ? decrypted.name : undefined,
+		avatar_url: typeof decrypted.avatar_url === 'string' ? decrypted.avatar_url : undefined,
+		role: decrypted.role as Role,
+		permissions: Array.isArray(decrypted.permissions)
+			? (decrypted.permissions as Permission[])
+			: [],
+		labels: Array.isArray(decrypted.labels) ? (decrypted.labels as Label[]) : [],
 		created_at: new Date(Number(user.created_at) * 1000),
-		...asObject(decrypted)
-	} as User;
+		updated_at: new Date(Number(user.updated_at) * 1000)
+	};
 }
 
-export async function decryptUsers(users: DBUser[], masterKey: string): Promise<User[]> {
+async function decryptUsers(users: DBUser[], masterKey: string): Promise<User[]> {
 	const decrypted = await Promise.allSettled(
 		users.map(async (user) => await decryptUser(user, masterKey))
 	);
@@ -614,6 +649,54 @@ export async function decryptUsers(users: DBUser[], masterKey: string): Promise<
 	return decrypted.filter((r) => r.status === 'fulfilled').map((r) => r.value);
 }
 
+async function decryptCustomer(customer: DBCustomer, masterKey: string): Promise<Customer> {
+	const decrypted = await decrypt(
+		{
+			data: toUint8Array(customer.data, 'data'),
+			wrapped_dek: toUint8Array(customer.wrapped_dek, 'wrapped_dek'),
+			nonce: toUint8Array(customer.nonce, 'nonce'),
+			tag: toUint8Array(customer.tag, 'tag'),
+			algorithm: toEncryptionAlgorithm(customer.algorithm),
+			version: Number(customer.version)
+		},
+		masterKey
+	);
+	const payload = asObject(decrypted);
+	const createdAtValue = payload.created_at ? new Date(String(payload.created_at)) : null;
+	const updatedAtValue = payload.updated_at ? new Date(String(payload.updated_at)) : null;
+	const createdAt =
+		createdAtValue && !Number.isNaN(createdAtValue.getTime())
+			? createdAtValue
+			: new Date(Number(customer.created_at) * 1000);
+	const updatedAt =
+		updatedAtValue && !Number.isNaN(updatedAtValue.getTime()) ? updatedAtValue : createdAt;
+
+	return {
+		id: customer.id,
+		email: typeof payload.email === 'string' ? payload.email : '',
+		name: typeof payload.name === 'string' ? payload.name : undefined,
+		avatar_url: customer.avatar_url || undefined,
+		tags: Array.isArray(payload.tags) ? (payload.tags as Label[]) : [],
+		created_at: createdAt,
+		updated_at: updatedAt
+	} as Customer;
+}
+
+async function decryptCustomers(customers: DBCustomer[], masterKey: string): Promise<Customer[]> {
+	const decrypted = await Promise.allSettled(
+		customers.map(async (customer) => await decryptCustomer(customer, masterKey))
+	);
+
+	const failed = decrypted.filter((r) => r.status === 'rejected');
+	if (failed.length > 0) {
+		console.error(
+			`Customer decryption failed on ${failed.length} shards`,
+			failed.map((r) => r.reason || 'Unknown')
+		);
+	}
+
+	return decrypted.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+}
 /// returns successful results + errors, auto logs errors
 
 export function results<T>(response: (QueryResult<T> | null)[]): [T[], string[]] {
@@ -749,19 +832,53 @@ export async function ensureLoggedIn(event: H3Event): Promise<User> {
 	const env = event.context.cloudflare.env;
 	ensureCollegeDB(env);
 
-	const user = await first<DBUser>(lookup.userId, 'SELECT * FROM users WHERE id = ?', [
-		lookup.userId
-	]).then((row) => {
-		if (!row) {
-			throw createError({
-				statusCode: 401,
-				message: 'User not found for session token'
-			});
-		}
-		return row;
-	});
+	// Reuse the cached decrypted user so the per-request hot path skips PBKDF2 KEK derivation.
+	const user = await getUserById(lookup.userId, env);
+	if (!user) {
+		throw createError({
+			statusCode: 401,
+			message: 'User not found for session token'
+		});
+	}
+	return user;
+}
 
-	return decryptUser(user, env.MASTER_KEY);
+export async function getOptionalLoggedIn(event: H3Event): Promise<User | null> {
+	const rawAuthHeader = event.node.req.headers['authorization'];
+	const authHeader = Array.isArray(rawAuthHeader) ? rawAuthHeader[0] : rawAuthHeader;
+	if (!authHeader || !authHeader.startsWith('Bearer ')) {
+		return null;
+	}
+
+	try {
+		return await ensureLoggedIn(event);
+	} catch (error) {
+		if (isHttpError(error)) {
+			return null;
+		}
+
+		throw error;
+	}
+}
+
+function canViewPrivateTicket(current: User | null, ticket: Ticket): boolean {
+	if (!ticket.private) {
+		return true;
+	}
+
+	if (!current) {
+		return false;
+	}
+
+	if (
+		current.permissions.includes(Permission.ViewPrivateTickets) ||
+		current.permissions.includes(Permission.ManageTicket) ||
+		current.permissions.includes(Permission.ManageTicketMessages)
+	) {
+		return true;
+	}
+
+	return ticket.assignees.some((assignee) => assignee.id === current.id);
 }
 
 export async function ensureCanWriteTo(current: User, target: User): Promise<void> {
@@ -794,6 +911,8 @@ export async function logIn(
 	const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(usernameOrEmail);
 	const lookupKey = isEmail ? `email_lookup:${usernameOrEmail}` : `username:${usernameOrEmail}`;
 
+	const USER_SELECT_COLUMNS = `id, username, created_at, updated_at, data, wrapped_dek, nonce, tag, algorithm, version, password_hash, password_salt, password_algorithm`;
+
 	let user: DBUser | null = null;
 	if (isEmail) {
 		// only compute hash if guarenteed to be an email
@@ -801,14 +920,14 @@ export async function logIn(
 		const emailLookupHash = await hmacSha256(env.HMAC_SECRET, email0);
 		user = await firstByLookupKey<DBUser>(
 			lookupKey,
-			`SELECT id, username, data, wrapped_dek, nonce, tag, password_hash, password_salt, password_algorithm FROM users WHERE email_lookup = ?`,
+			`SELECT ${USER_SELECT_COLUMNS} FROM users WHERE email_lookup = ?`,
 			[emailLookupHash]
 		);
 	} else {
 		const username0 = usernameOrEmail.trim();
 		user = await firstByLookupKey<DBUser>(
 			lookupKey,
-			`SELECT id, username, data, wrapped_dek, nonce, tag, password_hash, password_salt, password_algorithm FROM users WHERE username = ?`,
+			`SELECT ${USER_SELECT_COLUMNS} FROM users WHERE username = ?`,
 			[username0]
 		);
 	}
@@ -894,16 +1013,14 @@ export async function createUser(
 	env: any
 ): Promise<{ id: string; sessionToken: string }> {
 	const id = generateUserId();
-	const now = new Date();
+	const nowSeconds = Math.floor(Date.now() / 1000);
 
 	const encrypted = await encrypt(
 		{
 			email,
 			role,
 			permissions: DEFAULT_PERMISSIONS[role],
-			labels: [],
-			created_at: now,
-			updated_at: now
+			labels: []
 		},
 		env.MASTER_KEY
 	);
@@ -913,12 +1030,14 @@ export async function createUser(
 
 	await run(
 		id,
-		`INSERT INTO users (id, username, email_lookup, data, wrapped_dek, nonce, tag, algorithm, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO users (id, username, created_at, updated_at, data, email_lookup, wrapped_dek, nonce, tag, algorithm, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		[
 			id,
 			username,
-			emailLookupHash,
+			nowSeconds,
+			nowSeconds,
 			encrypted.ciphertext,
+			emailLookupHash,
 			encrypted.wrapped_dek,
 			encrypted.nonce,
 			encrypted.tag,
@@ -968,8 +1087,18 @@ export async function patchUser(
 	updates: Partial<Omit<User, 'id' | 'created_at' | 'updated_at'>>,
 	env: any
 ): Promise<User> {
-	const data = { ...user, ...updates };
-	const encrypted = await encrypt(data, env.MASTER_KEY);
+	const merged: User = { ...user, ...updates, updated_at: new Date() };
+	const encrypted = await encrypt(
+		{
+			email: merged.email,
+			name: merged.name,
+			avatar_url: merged.avatar_url,
+			role: merged.role,
+			permissions: merged.permissions,
+			labels: merged.labels
+		},
+		env.MASTER_KEY
+	);
 
 	await run(
 		user.id,
@@ -981,7 +1110,7 @@ export async function patchUser(
 			encrypted.tag,
 			encrypted.algorithm,
 			encrypted.version,
-			Math.floor(Date.now() / 1000),
+			Math.floor(merged.updated_at.getTime() / 1000),
 			user.id
 		]
 	);
@@ -1000,13 +1129,20 @@ export async function patchUser(
 		]);
 	}
 
-	return { ...user, ...updates };
+	await kv.del(`smoke:cache:user_id:${user.id}`);
+	await kv.del(`smoke:cache:user_username:${user.username}`);
+	if (updates.username && updates.username !== user.username) {
+		await kv.del(`smoke:cache:user_username:${updates.username}`);
+	}
+
+	return merged;
 }
 
 export async function deleteUser(userId: string): Promise<void> {
 	await Promise.allSettled([
 		run(userId, `DELETE FROM users WHERE id = ?`, [userId]),
-		deleteSessionTokens(userId)
+		deleteSessionTokens(userId),
+		kv.del(`smoke:cache:user_id:${userId}`)
 	]);
 }
 
@@ -1016,16 +1152,27 @@ export async function listUsers(
 	page: number,
 	limit: number,
 	offset: number,
-	sort: keyof DBUser,
+	sort: string,
 	sort_direction: 'asc' | 'desc'
 ): Promise<User[]> {
 	const masterKey = env.MASTER_KEY;
 	const cacheKey = `smoke:cache:user:list:${search}:${page}:${limit}:${sort}:${sort_direction}`;
+	const sortableFields: Array<keyof User> = [
+		'id',
+		'email',
+		'name',
+		'avatar_url',
+		'role',
+		'permissions',
+		'created_at',
+		'updated_at'
+	];
+	const sortKey = (sortableFields.includes(sort as keyof User) ? sort : 'id') as keyof User;
 
 	return await cache(cacheKey, async () => {
 		const sql = search
-			? 'SELECT id, username, data, wrapped_dek, nonce, tag, algorithm, version, created_at FROM users WHERE username LIKE ?'
-			: 'SELECT id, username, data, wrapped_dek, nonce, tag, algorithm, version, created_at FROM users';
+			? `SELECT ${USER_LIST_COLUMNS} FROM users WHERE username LIKE ?`
+			: `SELECT ${USER_LIST_COLUMNS} FROM users`;
 		const bindings = search ? [`%${search}%`] : [];
 
 		const result = await allAllShardsGlobal<DBUser>(sql, bindings, {
@@ -1039,16 +1186,17 @@ export async function listUsers(
 	});
 }
 
+const USER_LIST_COLUMNS = `id, username, created_at, updated_at, data, wrapped_dek, nonce, tag, algorithm, version`;
+const USER_FETCH_COLUMNS = `${USER_LIST_COLUMNS}, password_hash, password_salt, password_algorithm`;
+
 export async function getUserById(id: string, env: any): Promise<User | null> {
-	const cacheKey = `smoke:cache:user:${id}`;
+	const cacheKey = `smoke:cache:user_id:${id}`;
 	return await cache(
 		cacheKey,
 		async () => {
-			const user = await first<DBUser>(
-				id,
-				`SELECT id, username, data, wrapped_dek, nonce, tag, password_hash, password_salt, password_algorithm FROM users WHERE id = ?`,
-				[id]
-			);
+			const user = await first<DBUser>(id, `SELECT ${USER_FETCH_COLUMNS} FROM users WHERE id = ?`, [
+				id
+			]);
 
 			if (!user) return null;
 			return await decryptUser(user, env.MASTER_KEY);
@@ -1058,13 +1206,13 @@ export async function getUserById(id: string, env: any): Promise<User | null> {
 }
 
 export async function getUserByUsername(username: string, env: any): Promise<User | null> {
-	const cacheKey = `smoke:cache:user:${username}`;
+	const cacheKey = `smoke:cache:user_username:${username}`;
 	return await cache(
 		cacheKey,
 		async () => {
 			const user = await firstByLookupKey<DBUser>(
 				`username:${username}`,
-				`SELECT id, username, data, wrapped_dek, nonce, tag, password_hash, password_salt, password_algorithm FROM users WHERE username = ?`,
+				`SELECT ${USER_FETCH_COLUMNS} FROM users WHERE username = ?`,
 				[username]
 			);
 
@@ -1085,7 +1233,7 @@ export async function getUserByEmail(email: string, env: any): Promise<User | nu
 		async () => {
 			const user = await firstByLookupKey<DBUser>(
 				`email_lookup:${emailLookupHash}`,
-				`SELECT id, username, data, wrapped_dek, nonce, tag, password_hash, password_salt, password_algorithm FROM users WHERE email_lookup = ?`,
+				`SELECT ${USER_FETCH_COLUMNS} FROM users WHERE email_lookup = ?`,
 				[emailLookupHash]
 			);
 
@@ -1119,14 +1267,21 @@ export async function getUserBy(value: string, event: H3Event): Promise<User | n
 // #region Label CRUD
 
 export async function createLabel(name: string, color?: string): Promise<Label> {
-	let res: InsertResult<DBLabel>;
-	if (color) {
-		res = await insert<DBLabel>(`INSERT INTO labels (name, color) VALUES (?, ?)`, [name, color]);
-	} else {
-		res = await insert<DBLabel>(`INSERT INTO labels (name) VALUES (?)`, [name]);
-	}
+	const maxRow = await first<{ id: number }>(
+		'labels',
+		`SELECT COALESCE(MAX(id), 0) + 1 AS id FROM labels`,
+		[]
+	);
+	const nextId = Number(maxRow?.id ?? 1);
+	const nowSeconds = Math.floor(Date.now() / 1000);
 
-	const label = res.results[0];
+	await run(
+		String(nextId),
+		`INSERT INTO labels (id, name, color, created_at) VALUES (?, ?, ?, ?)`,
+		[nextId, name, color ?? null, nowSeconds]
+	);
+
+	const label = await getLabelById(nextId);
 	if (!label) {
 		throw createError({
 			statusCode: 500,
@@ -1135,6 +1290,68 @@ export async function createLabel(name: string, color?: string): Promise<Label> 
 	}
 
 	return { ...label, color: label.color || undefined };
+}
+
+export async function getLabelById(id: number): Promise<Label | null> {
+	const label = await first<DBLabel>(
+		String(id),
+		`SELECT id, name, color FROM labels WHERE id = ?`,
+		[id]
+	);
+
+	if (!label) {
+		return null;
+	}
+
+	return { ...label, color: label.color || undefined };
+}
+
+export async function listLabels(): Promise<Label[]> {
+	const labels = await allAllShardsGlobal<DBLabel>(`SELECT id, name, color FROM labels`, []).then(
+		(r) => r.results
+	);
+	return labels.map((label) => ({ ...label, color: label.color || undefined }));
+}
+
+export async function patchLabel(id: number, updates: Partial<Omit<Label, 'id'>>): Promise<Label> {
+	const fields = [];
+	const bindings = [];
+	if (updates.name) {
+		fields.push('name = ?');
+		bindings.push(updates.name);
+	}
+	if (updates.color !== undefined) {
+		fields.push('color = ?');
+		bindings.push(updates.color || null);
+	}
+
+	if (fields.length === 0) {
+		throw createError({
+			statusCode: 400,
+			message: 'No valid fields to update'
+		});
+	}
+
+	bindings.push(id);
+	const id0 = String(id);
+	await run(id0, `UPDATE labels SET ${fields.join(', ')} WHERE id = ?`, bindings);
+
+	const updated = await first<DBLabel>(id0, `SELECT id, name, color FROM labels WHERE id = ?`, [
+		id
+	]);
+
+	if (!updated) {
+		throw createError({
+			statusCode: 404,
+			message: 'Label not found after update'
+		});
+	}
+
+	return { ...updated, color: updated.color || undefined };
+}
+
+export async function deleteLabel(id: number): Promise<void> {
+	await run(String(id), `DELETE FROM labels WHERE id = ?`, [id]);
 }
 
 // #endregion
@@ -1150,12 +1367,10 @@ type TicketEncryptedSection = {
 	version: unknown;
 };
 
-type StoredTicketMessage = {
-	id: number;
-	ticket_id: number;
-	reply_to?: number;
-	sender: TicketActor;
-	message: string;
+type StoredTicketMessage = Omit<
+	TicketMessage,
+	'sender_id' | 'attachments' | 'created_at' | 'private'
+> & {
 	created_at: string;
 };
 
@@ -1229,6 +1444,7 @@ function toStoredTicketMessage(message: TicketMessage): StoredTicketMessage {
 
 function fromStoredTicketMessage(
 	message: StoredTicketMessage,
+	ticket: DBTicket,
 	attachments?: TicketAttachment[]
 ): TicketMessage {
 	return {
@@ -1236,6 +1452,8 @@ function fromStoredTicketMessage(
 		ticket_id: message.ticket_id,
 		reply_to: message.reply_to,
 		sender: message.sender,
+		sender_id: message.sender.id.toString(),
+		private: ticket.private === 1,
 		message: message.message,
 		created_at: new Date(message.created_at),
 		attachments: attachments && attachments.length > 0 ? attachments : undefined
@@ -1383,6 +1601,8 @@ async function writeTicketSections(
 			id
 		]
 	);
+
+	await invalidateTicketCache(id);
 }
 
 async function hydrateTicket(row: DBTicket, env: any): Promise<Ticket> {
@@ -1398,6 +1618,7 @@ async function hydrateTicket(row: DBTicket, env: any): Promise<Ticket> {
 		status: normalizeTicketStatus(row.status),
 		priority: normalizeTicketPriority(row.priority),
 		labels: parseCsvNumberList(row.labels),
+		private: row.private === 1,
 		customer_id: Number(row.customer_id),
 		assignees,
 		created_at: new Date(Number(row.created_at) * 1000),
@@ -1425,7 +1646,7 @@ async function hydrateTicketMessages(row: DBTicket, env: any): Promise<TicketMes
 		const ticketAttachments = storedAttachments
 			? storedAttachments.map(fromStoredTicketAttachment)
 			: undefined;
-		messages.push(fromStoredTicketMessage(storedMessage, ticketAttachments));
+		messages.push(fromStoredTicketMessage(storedMessage, row, ticketAttachments));
 	}
 
 	return messages;
@@ -1477,24 +1698,37 @@ async function getTicketRowById(id: number): Promise<DBTicket | null> {
 
 export async function createTicket(input: TicketCreateInput, env: any): Promise<Ticket> {
 	ensureCollegeDB(env);
+	const maxRow = await first<{ id: number }>(
+		'tickets',
+		`SELECT COALESCE(MAX(id), 0) + 1 AS id FROM tickets`,
+		[]
+	);
+	const nextId = Number(maxRow?.id ?? 1);
+	const nowSeconds = Math.floor(Date.now() / 1000);
 
 	const labels = joinCsvNumberList(input.labels);
 	const assignees = joinCsvStringList(input.assignee_ids);
-	const created = await insert<DBTicket>(
-		`INSERT INTO tickets (title, description, customer_id, status, priority, labels, assignees)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+	await run(
+		String(nextId),
+		`INSERT INTO tickets (
+			id, title, created_at, updated_at, description, customer_id, status, priority, labels, assignees, private
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		[
+			nextId,
 			input.title,
+			nowSeconds,
+			nowSeconds,
 			input.description,
 			input.customer_id,
 			input.status ?? TicketStatus.Open,
 			input.priority ?? TicketPriority.None,
 			labels,
-			assignees
+			assignees,
+			input.private ? 1 : 0
 		]
 	);
 
-	const createdRow = await getTicketRowById(Number(created.generatedId));
+	const createdRow = await getTicketRowById(nextId);
 	if (!createdRow) {
 		throw createError({
 			statusCode: 500,
@@ -1550,6 +1784,11 @@ export async function patchTicket(
 		bindings.push(joinCsvStringList(updates.assignee_ids));
 	}
 
+	if (updates.private !== undefined) {
+		fields.push('private = ?');
+		bindings.push(updates.private ? 1 : 0);
+	}
+
 	if (fields.length === 0) {
 		throw createError({
 			statusCode: 400,
@@ -1573,27 +1812,84 @@ export async function patchTicket(
 		});
 	}
 
+	await invalidateTicketCache(id);
 	return await hydrateTicket(updatedRow, env);
 }
 
 export async function deleteTicket(id: number, env: any): Promise<void> {
 	ensureCollegeDB(env);
 	await run(id.toString(), `DELETE FROM tickets WHERE id = ?`, [id]);
+	await invalidateTicketCache(id);
 }
 
-export async function listTickets(env: any): Promise<Ticket[]> {
+export async function listTickets(
+	env: any,
+	search: string,
+	page: number,
+	limit: number,
+	offset: number,
+	sort: keyof DBTicket,
+	sort_direction: 'asc' | 'desc',
+	current: User | null = null
+): Promise<Ticket[]> {
 	ensureCollegeDB(env);
-	const result = await allAllShardsGlobal<DBTicket>(
-		`SELECT * FROM tickets ORDER BY created_at DESC`
+
+	const cacheKey = `smoke:cache:tickets:${search}:${page}:${limit}:${sort}:${sort_direction}`;
+	return await cache(cacheKey, async () => {
+		const bindings: Array<string | number> = [];
+		const clauses: string[] = [];
+
+		if (search) {
+			clauses.push('(title LIKE ? OR description LIKE ?)');
+			bindings.push(`%${search}%`, `%${search}%`);
+		}
+
+		if (!current) {
+			clauses.push('private = 0');
+		} else if (!current.permissions.includes(Permission.ViewPrivateTickets)) {
+			clauses.push('(private = 0 OR assignees LIKE ?)');
+			bindings.push(`%${current.id}%`);
+		}
+
+		const sql = `SELECT * FROM tickets${clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : ''}`;
+
+		const result = await allAllShardsGlobal<DBTicket>(sql, bindings, {
+			sortBy: sort as keyof DBTicket,
+			sortDirection: sort_direction as 'asc' | 'desc',
+			offset,
+			limit
+		});
+
+		return await Promise.all(
+			result.results.map(async (ticket) => await hydrateTicket(ticket, env))
+		);
+	});
+}
+
+export async function getTicketById(
+	id: number,
+	env: any,
+	current: User | null = null
+): Promise<Ticket | null> {
+	ensureCollegeDB(env);
+	// Cache the hydrated ticket independent of the calling user; the visibility
+	// filter is applied per-caller below so the cache stays user-agnostic.
+	const hydrated = await cache(
+		`smoke:cache:ticket_id:${id}`,
+		async () => {
+			const row = await getTicketRowById(id);
+			if (!row) return null;
+			return await hydrateTicket(row, env);
+		},
+		300
 	);
-	return await Promise.all(result.results.map(async (ticket) => await hydrateTicket(ticket, env)));
+	if (!hydrated) return null;
+	if (!canViewPrivateTicket(current, hydrated)) return null;
+	return hydrated;
 }
 
-export async function getTicketById(id: number, env: any): Promise<Ticket | null> {
-	ensureCollegeDB(env);
-	const ticket = await getTicketRowById(id);
-	if (!ticket) return null;
-	return await hydrateTicket(ticket, env);
+async function invalidateTicketCache(id: number): Promise<void> {
+	await kv.del(`smoke:cache:ticket_id:${id}`);
 }
 
 export async function getTicketsByPriority(priority: TicketPriority, env: any): Promise<Ticket[]> {
@@ -1650,11 +1946,14 @@ export async function addTicketMessage(
 	const attachmentEntries = (input.attachments || []).map((attachment, index) =>
 		toTicketAttachmentInput(attachment, ticketId, index)
 	);
+
 	const ticketMessage: TicketMessage = {
 		id: messageId,
 		ticket_id: ticketId,
 		reply_to: input.reply_to,
 		sender,
+		sender_id: sender.id.toString(),
+		private: ticket.private === 1,
 		message: input.message,
 		created_at: new Date(),
 		attachments: attachmentEntries.length > 0 ? attachmentEntries : undefined
@@ -1670,7 +1969,11 @@ export async function addTicketMessage(
 	return ticketMessage;
 }
 
-export async function getTicketThread(id: number, env: any): Promise<TicketThread> {
+export async function getTicketThread(
+	id: number,
+	env: any,
+	current: User | null = null
+): Promise<TicketThread> {
 	ensureCollegeDB(env);
 
 	const ticket = await getTicketRowById(id);
@@ -1681,20 +1984,55 @@ export async function getTicketThread(id: number, env: any): Promise<TicketThrea
 		});
 	}
 
-	return await hydrateTicketThread(ticket, env);
+	const thread = await hydrateTicketThread(ticket, env);
+	if (!canViewPrivateTicket(current, thread.ticket)) {
+		throw createError({
+			statusCode: 403,
+			message: 'You do not have permission to view this ticket'
+		});
+	}
+
+	return thread;
 }
 
-export async function listTicketMessages(id: number, env: any): Promise<TicketMessage[]> {
-	const thread = await getTicketThread(id, env);
-	return thread.messages;
+export async function listTicketMessages(
+	id: number,
+	env: any,
+	search: string,
+	sort: keyof Omit<TicketMessage, 'attachments' | 'ticket_id' | 'sender'>,
+	sort_direction: 'asc' | 'desc',
+	current: User | null = null
+): Promise<TicketMessage[]> {
+	const thread = await getTicketThread(id, env, current);
+	return thread.messages
+		.filter((message) => {
+			if (!search) return true;
+			const lowerSearch = search.toLowerCase();
+			return (
+				message.message.toLowerCase().includes(lowerSearch) ||
+				(message.sender.kind === 'user' &&
+					(message.sender.username.toLowerCase().includes(lowerSearch) ||
+						message.sender.email?.toLowerCase().includes(lowerSearch) ||
+						(message.sender.name && message.sender.name.toLowerCase().includes(lowerSearch))))
+			);
+		})
+		.sort((a, b) => {
+			const fieldA = (a[sort]?.toString() || '').toLowerCase();
+			const fieldB = (b[sort]?.toString() || '').toLowerCase();
+			if (fieldA < fieldB) return sort_direction === 'asc' ? -1 : 1;
+			if (fieldA > fieldB) return sort_direction === 'asc' ? 1 : -1;
+
+			return 0;
+		});
 }
 
 export async function getTicketMessage(
 	ticketId: number,
 	messageId: number,
-	env: any
+	env: any,
+	current: User | null = null
 ): Promise<TicketMessage> {
-	const thread = await getTicketThread(ticketId, env);
+	const thread = await getTicketThread(ticketId, env, current);
 	const message = thread.messages.find((msg) => msg.id === messageId);
 	if (!message) {
 		throw createError({
@@ -1704,6 +2042,74 @@ export async function getTicketMessage(
 	}
 
 	return message;
+}
+
+export async function editTicketMessage(
+	ticketId: number,
+	messageId: number,
+	content: string,
+	attachments: TicketAttachmentInput[] | undefined,
+	env: any
+): Promise<TicketMessage> {
+	ensureCollegeDB(env);
+
+	const ticket = await getTicketRowById(ticketId);
+	if (!ticket) {
+		throw createError({
+			statusCode: 404,
+			message: 'Ticket not found'
+		});
+	}
+
+	const sections = await readTicketSections(ticket, env.MASTER_KEY);
+	const messages = sections.messages ? [...sections.messages] : [];
+	if (messageId < 0 || messageId >= messages.length || !messages[messageId]) {
+		throw createError({
+			statusCode: 404,
+			message: 'Ticket message not found'
+		});
+	}
+
+	const oldAttachments = sections.attachments
+		? [...sections.attachments]
+		: Array.from(
+				{
+					length: messages.length
+				},
+				() => null
+			);
+
+	const storedMessage = messages[messageId]!;
+	const storedAttachments = oldAttachments[messageId] ?? null;
+
+	const ticketAttachments = attachments
+		? attachments.map((attachment, index) =>
+				toTicketAttachmentInput(attachment, ticketId, messageId * 1000 + index)
+			)
+		: storedAttachments
+			? storedAttachments.map(fromStoredTicketAttachment)
+			: undefined;
+
+	const updatedMessage: TicketMessage = {
+		id: storedMessage.id,
+		ticket_id: storedMessage.ticket_id,
+		reply_to: storedMessage.reply_to,
+		sender: storedMessage.sender,
+		sender_id: storedMessage.sender.id.toString(),
+		private: ticket.private === 1,
+		message: content,
+		created_at: new Date(storedMessage.created_at),
+		attachments: ticketAttachments
+	};
+
+	messages[messageId] = toStoredTicketMessage(updatedMessage);
+	oldAttachments[messageId] = ticketAttachments
+		? ticketAttachments.map(toStoredTicketAttachment)
+		: null;
+
+	await writeTicketSections(ticketId, messages, oldAttachments, env);
+
+	return updatedMessage;
 }
 
 export async function deleteTicketMessage(
@@ -1764,3 +2170,219 @@ export async function clearTicketMessages(id: number, env: any): Promise<void> {
 }
 
 // #endregion
+
+// #region Customer CRUD
+
+async function getCustomerRowById(id: number): Promise<DBCustomer | null> {
+	return await first<DBCustomer>(id.toString(), `SELECT * FROM customers WHERE id = ?`, [id]);
+}
+
+type CustomerCreateInput = {
+	name: string;
+	email: string;
+	avatar_url?: string;
+	tags?: Label[];
+};
+
+async function getCustomerEmailHash(email: string, env: any): Promise<string> {
+	return await hmacSha256(env.HMAC_SECRET, email.trim().toLowerCase());
+}
+
+async function setCustomerEmailLookup(email: string, customerId: number, env: any): Promise<void> {
+	const lookupHash = await getCustomerEmailHash(email, env);
+	await kv.set(`${CUSTOMER_EMAIL_LOOKUP_PREFIX}${lookupHash}`, String(customerId));
+}
+
+async function deleteCustomerEmailLookup(email: string, env: any): Promise<void> {
+	const lookupHash = await getCustomerEmailHash(email, env);
+	await kv.del(`${CUSTOMER_EMAIL_LOOKUP_PREFIX}${lookupHash}`);
+}
+
+export async function createCustomer(input: CustomerCreateInput, env: any): Promise<Customer> {
+	ensureCollegeDB(env);
+	const maxRow = await first<{ id: number }>(
+		'customers',
+		`SELECT COALESCE(MAX(id), 0) + 1 AS id FROM customers`,
+		[]
+	);
+	const nextId = Number(maxRow?.id ?? 1);
+	const nowSeconds = Math.floor(Date.now() / 1000);
+	const nowIso = new Date(nowSeconds * 1000).toISOString();
+
+	const payload = {
+		name: input.name,
+		email: input.email,
+		tags: input.tags || [],
+		created_at: nowIso,
+		updated_at: nowIso
+	};
+
+	const encrypted = await encrypt(payload, env.MASTER_KEY);
+	await run(
+		String(nextId),
+		`INSERT INTO customers (id, avatar_url, created_at, data, wrapped_dek, nonce, tag, algorithm, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		[
+			nextId,
+			input.avatar_url || null,
+			nowSeconds,
+			encrypted.ciphertext,
+			encrypted.wrapped_dek,
+			encrypted.nonce,
+			encrypted.tag,
+			encrypted.algorithm,
+			encrypted.version
+		]
+	);
+
+	const createdRow = await getCustomerRowById(nextId);
+	if (!createdRow) {
+		throw createError({
+			statusCode: 500,
+			message: 'Failed to retrieve created customer'
+		});
+	}
+
+	await setCustomerEmailLookup(input.email, nextId, env);
+
+	return await decryptCustomer(createdRow, env.MASTER_KEY);
+}
+
+export async function patchCustomer(
+	id: number,
+	updates: Partial<Omit<Customer, 'id'>>,
+	env: any
+): Promise<Customer> {
+	ensureCollegeDB(env);
+
+	const customerRow = await getCustomerRowById(id);
+	if (!customerRow) {
+		throw createError({
+			statusCode: 404,
+			message: 'Customer not found'
+		});
+	}
+
+	const existing = await decryptCustomer(customerRow, env.MASTER_KEY);
+	const payload = {
+		name: updates.name ?? existing.name,
+		email: updates.email ?? existing.email,
+		tags: updates.tags ?? existing.tags,
+		created_at: existing.created_at.toISOString(),
+		updated_at: new Date().toISOString()
+	};
+
+	const encrypted = await encrypt(payload, env.MASTER_KEY);
+	const nextAvatarUrl =
+		updates.avatar_url !== undefined ? updates.avatar_url : existing.avatar_url || null;
+	if (updates.email && updates.email !== existing.email) {
+		await deleteCustomerEmailLookup(existing.email, env);
+		await setCustomerEmailLookup(updates.email, id, env);
+	}
+
+	await run(
+		id.toString(),
+		`UPDATE customers SET avatar_url = ?, data = ?, wrapped_dek = ?, nonce = ?, tag = ?, algorithm = ?, version = ? WHERE id = ?`,
+		[
+			nextAvatarUrl,
+			encrypted.ciphertext,
+			encrypted.wrapped_dek,
+			encrypted.nonce,
+			encrypted.tag,
+			encrypted.algorithm,
+			encrypted.version,
+			id
+		]
+	);
+
+	const updatedRow = await getCustomerRowById(id);
+	if (!updatedRow) {
+		throw createError({
+			statusCode: 500,
+			message: 'Failed to retrieve updated customer'
+		});
+	}
+
+	await kv.del(`smoke:cache:customer_id:${id}`);
+	return await decryptCustomer(updatedRow, env.MASTER_KEY);
+}
+
+export async function deleteCustomer(id: number, env: any): Promise<void> {
+	ensureCollegeDB(env);
+	const existing = await getCustomerRowById(id);
+	if (existing) {
+		const decrypted = await decryptCustomer(existing, env.MASTER_KEY);
+		await deleteCustomerEmailLookup(decrypted.email, env);
+	}
+	await run(id.toString(), `DELETE FROM customers WHERE id = ?`, [id]);
+	await kv.del(`smoke:cache:customer_id:${id}`);
+}
+
+export async function listCustomers(
+	env: any,
+	search: string,
+	page: number,
+	limit: number,
+	offset: number,
+	_sort: string,
+	sort_direction: 'asc' | 'desc'
+): Promise<Customer[]> {
+	const masterKey = env.MASTER_KEY;
+	const cacheKey = `smoke:cache:customer:list:${search}:${page}:${limit}:created_at:${sort_direction}`;
+
+	return await cache(cacheKey, async () => {
+		const result = await allAllShardsGlobal<DBCustomer>('SELECT * FROM customers', []);
+		const customers = await decryptCustomers(result.results, masterKey);
+		const normalizedSearch = search.trim().toLowerCase();
+		const filtered = normalizedSearch
+			? customers.filter(
+					(customer) =>
+						customer.name?.toLowerCase().includes(normalizedSearch) ||
+						customer.email.toLowerCase().includes(normalizedSearch)
+				)
+			: customers;
+
+		const sorted = [...filtered].sort((a, b) => {
+			const fieldA = a.created_at.getTime();
+			const fieldB = b.created_at.getTime();
+
+			if (fieldA < fieldB) return sort_direction === 'asc' ? -1 : 1;
+			if (fieldA > fieldB) return sort_direction === 'asc' ? 1 : -1;
+			return 0;
+		});
+
+		return sorted.slice(offset, offset + limit);
+	});
+}
+
+export async function getCustomerById(id: number, env: any): Promise<Customer | null> {
+	ensureCollegeDB(env);
+	return await cache(
+		`smoke:cache:customer_id:${id}`,
+		async () => {
+			const customer = await getCustomerRowById(id);
+			if (!customer) return null;
+			return await decryptCustomer(customer, env.MASTER_KEY);
+		},
+		3600
+	);
+}
+
+export async function getCustomerByEmail(email: string, env: any): Promise<Customer | null> {
+	ensureCollegeDB(env);
+	const lookupHash = await getCustomerEmailHash(email, env);
+	const customerId = await kv.get<string>(`${CUSTOMER_EMAIL_LOOKUP_PREFIX}${lookupHash}`);
+	if (customerId) {
+		const found = await getCustomerById(Number(customerId), env);
+		if (found) return found;
+	}
+
+	const allRows = await allAllShardsGlobal<any>('SELECT * FROM customers', []);
+	const allCustomers = await decryptCustomers(allRows.results as DBCustomer[], env.MASTER_KEY);
+	const normalized = email.trim().toLowerCase();
+	const match = allCustomers.find((customer) => customer.email.trim().toLowerCase() === normalized);
+	if (match) {
+		await setCustomerEmailLookup(match.email, match.id, env);
+	}
+
+	return match ?? null;
+}
