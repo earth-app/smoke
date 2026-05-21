@@ -25,6 +25,7 @@ export type Ticket = {
 	priority: TicketPriority;
 	labels: number[];
 	customer_id: number;
+	private: boolean;
 	assignees: User[];
 	created_at: Date;
 	updated_at: Date;
@@ -73,6 +74,7 @@ export type TicketCreateInput = {
 	priority?: TicketPriority;
 	labels?: number[];
 	assignee_ids?: string[];
+	private?: boolean;
 };
 
 export type TicketPatchInput = Partial<TicketCreateInput>;
@@ -88,6 +90,8 @@ export type TicketMessage = {
 	ticket_id: number;
 	reply_to?: number;
 	sender: TicketActor;
+	sender_id: string;
+	private: boolean;
 	message: string;
 	created_at: Date;
 	attachments?: TicketAttachment[];
