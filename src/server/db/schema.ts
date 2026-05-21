@@ -2,7 +2,10 @@ import type { DrizzleClientLike, SQLDatabase } from '@earth-app/collegedb';
 import {
 	createDrizzleSQLProvider,
 	createNuxtHubKVProvider,
-	initialize
+	createSQLiteProvider,
+	initialize,
+	isKVStorage,
+	isSQLDatabase
 } from '@earth-app/collegedb';
 import { sql } from 'drizzle-orm';
 import type { AnyD1Database } from 'drizzle-orm/d1';
@@ -109,6 +112,7 @@ export const tickets = sqliteTable(
 		priority: text('priority').notNull().default('none'),
 		labels: text('labels'), // comma-separated label IDs
 		assignees: text('assignees'), // comma-separated user IDs
+		private: integer('private').notNull().default(0), // 0 = false, 1 = true
 
 		// encrypted payloads
 		messages_data: blob('messages_data'),
@@ -134,15 +138,44 @@ export const tickets = sqliteTable(
 		index('idx_tickets_status').on(table.status),
 		index('idx_tickets_priority').on(table.priority),
 		index('idx_tickets_created_at').on(table.created_at),
+		index('idx_tickets_private').on(table.private),
 		index('idx_tickets_updated_at').on(table.updated_at)
 	]
 );
 
 export type DBTicket = typeof tickets.$inferSelect;
 
-// collegedb initialization
+function toShardProvider(binding: unknown): SQLDatabase | null {
+	if (isSQLDatabase(binding)) {
+		return binding;
+	}
+
+	const candidate = binding as DrizzleClientLike & { prepare?: unknown };
+	if (
+		typeof candidate?.run === 'function' ||
+		typeof candidate?.all === 'function' ||
+		typeof candidate?.get === 'function' ||
+		typeof candidate?.execute === 'function'
+	) {
+		return createDrizzleSQLProvider(candidate, sql);
+	}
+
+	if (typeof candidate?.prepare === 'function') {
+		return createSQLiteProvider(binding as AnyD1Database);
+	}
+
+	try {
+		return createDrizzleSQLProvider(drizzleD1(binding as AnyD1Database), sql);
+	} catch {
+		return null;
+	}
+}
 
 export let collegeDBInitialized = false;
+
+export function resetCollegeDB() {
+	collegeDBInitialized = false;
+}
 
 export function ensureCollegeDB(env: any) {
 	if (collegeDBInitialized) return;
@@ -166,6 +199,16 @@ export function ensureCollegeDB(env: any) {
 		});
 	}
 
+	const primaryProvider = toShardProvider(primaryDb);
+	if (!primaryProvider) {
+		throw createError({
+			statusCode: 500,
+			message: 'Primary database binding is not a recognized SQL provider'
+		});
+	}
+
+	const shards: Record<string, SQLDatabase> = { 'db-primary': primaryProvider };
+
 	const candidateKeys = Object.keys(env).filter((k) => {
 		if (!k) return false;
 		if (k === 'KV' || k === 'CACHE' || k === 'EMAIL' || k === 'ShardCoordinator') return false;
@@ -173,32 +216,14 @@ export function ensureCollegeDB(env: any) {
 		return k.startsWith('DB_') || k.startsWith('DB-') || k.startsWith('db-');
 	});
 
-	const shards: Record<string, SQLDatabase> = {
-		'db-primary': createDrizzleSQLProvider(primaryDb, sql)
-	};
-
 	for (const key of candidateKeys) {
 		const binding = env[key];
 		if (!binding) continue;
 
-		let provider;
-
-		if (
-			typeof (binding as DrizzleClientLike).run === 'function' ||
-			typeof (binding as DrizzleClientLike).all === 'function' ||
-			typeof (binding as DrizzleClientLike).get === 'function' ||
-			typeof (binding as DrizzleClientLike).execute === 'function'
-		) {
-			provider = createDrizzleSQLProvider(binding as DrizzleClientLike, sql);
-			console.log(`Binding ${key} detected as Drizzle client. Added Drizzle client provider.`);
-		} else {
-			try {
-				provider = createDrizzleSQLProvider(drizzleD1(binding as AnyD1Database), sql);
-				console.log(`Binding ${key} detected as D1 database. Added Drizzle client provider.`);
-			} catch (err) {
-				console.warn(`Binding ${key} is not a valid Drizzle client or D1 database. Skipping.`);
-				continue;
-			}
+		const provider = toShardProvider(binding);
+		if (!provider) {
+			console.warn(`Binding ${key} is not a valid SQL provider. Skipping.`);
+			continue;
 		}
 
 		const shardName = key.toLowerCase().replace(/_/g, '-');
@@ -206,7 +231,7 @@ export function ensureCollegeDB(env: any) {
 	}
 
 	initialize({
-		kv: createNuxtHubKVProvider(kv),
+		kv: isKVStorage(kv) ? kv : createNuxtHubKVProvider(kv),
 		shards,
 		strategy: {
 			read: 'location',
