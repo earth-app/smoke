@@ -48,6 +48,54 @@ export const label = z
 	})
 	.describe('A label that can be applied to users or customers for organizational purposes');
 
+export const labelIdParam = numId.int().positive().describe('A numerical label ID');
+
+export const labelCreateBody = z
+	.object({
+		name: z.string().min(1).max(48),
+		color: z.hex().optional()
+	})
+	.describe('The body of a POST request to create a label');
+
+export const labelPatchBody = z
+	.object({
+		name: z.string().min(1).max(48).optional(),
+		color: z.hex().optional()
+	})
+	.describe('The body of a PATCH request to update a label');
+
+export const customerIdParam = numId.int().positive().describe('A numerical customer ID');
+
+export const customer = z
+	.object({
+		id: customerIdParam,
+		email,
+		name: z.string().min(1).max(128).optional(),
+		avatar_url,
+		tags: z.array(label),
+		created_at: z.date(),
+		updated_at: z.date()
+	})
+	.describe('A customer that can create and receive tickets');
+
+export const customerCreateBody = z
+	.object({
+		email,
+		name: z.string().min(1).max(128).optional(),
+		avatar_url,
+		tags: z.array(label).optional()
+	})
+	.describe('The body of a POST request to create a customer');
+
+export const customerPatchBody = z
+	.object({
+		email: email.optional(),
+		name: z.string().min(1).max(128).optional(),
+		avatar_url,
+		tags: z.array(label).optional()
+	})
+	.describe('The body of a PATCH request to update a customer');
+
 export const user = z
 	.object({
 		id,
@@ -164,7 +212,8 @@ export const ticketCreateBody = z
 		status: ticketStatus.optional(),
 		priority: ticketPriority.optional(),
 		labels: z.array(z.coerce.number().int().nonnegative()).optional(),
-		assignee_ids: z.array(id).optional()
+		assignee_ids: z.array(id).optional(),
+		private: z.boolean().optional()
 	})
 	.describe('The body of a POST request to create a new ticket');
 
@@ -176,7 +225,8 @@ export const ticketPatchBody = z
 		status: ticketStatus.optional(),
 		priority: ticketPriority.optional(),
 		labels: z.array(z.coerce.number().int().nonnegative()).optional(),
-		assignee_ids: z.array(id).optional()
+		assignee_ids: z.array(id).optional(),
+		private: z.boolean().optional()
 	})
 	.describe('The body of a PATCH request to update a ticket');
 
