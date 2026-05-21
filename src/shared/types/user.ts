@@ -41,6 +41,8 @@ export enum Permission {
 	LinkIssue = 'link_issue',
 	AddEmail = 'add_email',
 	RemoveEmail = 'remove_email',
+	ViewPrivateTickets = 'view_private_tickets',
+	TogglePrivate = 'toggle_private',
 	// customer permissions
 	ChangeCustomerName = 'change_customer_name',
 	ChangeCustomerTags = 'change_customer_tags',
@@ -114,6 +116,14 @@ export const ALL_PERMISSIONS: Record<Permission, PermissionData> = {
 		description: 'Allows the user to remove an email from a ticket.',
 		category: 'tickets'
 	},
+	[Permission.ViewPrivateTickets]: {
+		description: 'Allows the user to view private tickets.',
+		category: 'tickets'
+	},
+	[Permission.TogglePrivate]: {
+		description: 'Allows the user to toggle the private status of a ticket.',
+		category: 'tickets'
+	},
 	// customers
 	[Permission.ChangeCustomerName]: {
 		description: "Allows the user to change a customer's name.",
@@ -156,7 +166,10 @@ export const DEFAULT_PERMISSIONS: Record<Role, Permission[]> = {
 		Permission.CloseTicket,
 		Permission.ChangeLabels,
 		Permission.AddEmail,
-		Permission.RemoveEmail
+		Permission.RemoveEmail,
+		Permission.ChangeCustomerName,
+		Permission.ChangeCustomerTags,
+		Permission.ManageSelf
 	],
 	[Role.Manager]: [
 		Permission.ReplyTicket,
@@ -173,7 +186,9 @@ export const DEFAULT_PERMISSIONS: Record<Role, Permission[]> = {
 		Permission.ChangeCustomerName,
 		Permission.ChangeCustomerTags,
 		Permission.ManageSelf,
-		Permission.ManageUsers
+		Permission.ManageUsers,
+		Permission.ChangeUserLabels,
+		Permission.TogglePrivate
 	],
 	[Role.Admin]: Object.values(Permission)
 };
