@@ -44,7 +44,7 @@ jobs:
       - name: Run Tests with Coverage
         run: bun run test:coverage
       - name: Archive Test Coverage
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: coverage/lcov-report
@@ -83,7 +83,7 @@ jobs:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       - name: Archive Build Artifacts
         id: archive
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: build-artifacts-${{ github.run_id }}
           path: .output/
