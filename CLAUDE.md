@@ -25,6 +25,13 @@ Required env (see `.env.test` for example values; the test env keys are `'m'.rep
 - `MASTER_KEY` — ≥16 chars, used for envelope encryption of all PII.
 - `HMAC_SECRET` — hex ≥32 bytes, used to HMAC emails for lookup (emails themselves are encrypted, so they can't be queried directly).
 
+Email conversation engine (see the Email engine note below) — all required together; if any is missing the inbound handler degrades to a "not configured to receive emails" auto-reply and creates nothing:
+
+- `CF_API_TOKEN` — Cloudflare API token with the **Email Routing Addresses: Edit** account permission.
+- `CF_ACCOUNT_ID` — account that owns the Email Routing zone.
+- `SUPPORT_EMAIL` — base support address; reply aliases are `support+t<id>@<domain>`. Its domain must be onboarded to Email Service (DKIM/SPF) with a **catch-all** route to this worker.
+- `NUXT_PUBLIC_SITE_URL` — used for the ticket link in the auto-ack (optional; falls back to the configured site url).
+
 ## Layout
 
 - `srcDir: 'src/'`, `serverDir: 'src/server/'`, shared at `src/shared/` (Nuxt 4 config).
@@ -58,6 +65,13 @@ Required env (see `.env.test` for example values; the test env keys are `'m'.rep
 **User identifier resolution.** `getUserBy(value, event)` accepts `'current'` (logged-in user), `'@username'`, or a raw id — used by `/api/users/[id]/*` routes.
 
 **Tickets.** `tickets.labels` and `tickets.assignees` are stored as comma-separated strings (see `parseCsvStringList` / `joinCsvNumberList`). `private` is stored as `0|1` integer. Messages and attachments are encrypted as parallel arrays — `messages[i]` pairs with `attachments[i]` (use `writeTicketSections` to keep them in sync). Private tickets are gated by `canViewPrivateTicket` (`ViewPrivateTickets`/`ManageTicket`/`ManageTicketMessages` perms or being an assignee).
+
+**Email engine (`src/server/utils/email.ts` + `src/server/plugins/email.ts`).** Inbound mail (Cloudflare Email Routing → `cloudflare:email` hook) is parsed from the real `ForwardableEmailMessage` (`message.from`/`.to`/`.headers`/`.raw`, parsed with `postal-mime`), threaded into an existing ticket or used to open a new one, then answered with **one** synchronous `message.reply()` auto-ack (built with `mimetext`). Agent replies posted to `/api/tickets/[id]/messages` are mirrored to the customer via `env.EMAIL.send()` (the `send_email` `EMAIL` binding) when the ticket is an active, non-private email thread and the customer's address is verified.
+
+- **No DB schema changes** — all email state lives in KV: `smoke:email_thread:<ticketId>` (subject + customer email + last Message-ID + References chain), `smoke:email_disabled:<ticketId>` (permanent kill flag), `smoke:email_msgid:<sha256(messageId)>` → ticketId (inbound resolution index), `smoke:email_addr:<hmac(email)>` → `{ id, verified }` (Cloudflare destination-address record).
+- **Threading resolution order:** reply alias `support+t<id>@…` (primary) → `In-Reply-To` → `References` chain.
+- **Verified-address pool (the 200 cap).** `env.EMAIL.send()` only reaches **verified destination addresses**, hard-capped at **200 per account**. On a new email thread the engine provisions the customer's address via the Cloudflare API (which sends the verification email); on ticket close/delete (`patchTicket`/`deleteTicket`) it releases the address **iff the customer has no other open ticket** (`releaseEmailAddressIfNoOpenTickets`), recycling the slot. At capacity, the thread is flagged `disabled` and the auto-ack says updates won't come by email — disabled threads never re-ignite. `reapStaleUnverified` (throttled, best-effort) deletes addresses never verified within ~72h.
+- `message.reply()` is the only way to mail a not-yet-verified customer (synchronous, DMARC-gated, once per event); deferred agent replies require the verified-destination path above.
 
 ## Conventions
 
