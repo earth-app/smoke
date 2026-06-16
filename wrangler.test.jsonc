@@ -3,6 +3,7 @@
 	"name": "smoke-test",
 	"main": "./src/server/api/status.get.ts",
 	"compatibility_date": "2026-05-18",
+	"compatibility_flags": ["nodejs_compat"],
 	"d1_databases": [
 		{
 			"binding": "DB",

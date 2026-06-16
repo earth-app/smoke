@@ -12,13 +12,14 @@
     "postinstall": "nuxt prepare",
     "prettier": "bunx prettier --write .",
     "prettier:check": "bunx prettier --check .",
-    "prepare": "husky install"
+    "prepare": "husky install",
+    "types": "bunx wrangler types src/server/utils/worker-configuration.d.ts",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json"
   },
   "peerDependencies": {
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@cloudflare/workers-types": "^4.20260613.1",
     "@codecov/nuxt-plugin": "^2.0.1",
     "@earth-app/collegedb": "^1.2.3",
     "@libsql/client": "^0.17.3",
@@ -39,10 +40,12 @@
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
     "luxon": "^3.7.2",
+    "mimetext": "^3.0.28",
     "nuxt": "^4.4.8",
     "nuxt-api-shield": "^0.10.2",
     "nuxt-schema-org": "^6.2.1",
     "nuxt-viewport": "^2.4.0",
+    "postal-mime": "^2.7.4",
     "zod": "^4.4.3"
   },
   "devDependencies": {
