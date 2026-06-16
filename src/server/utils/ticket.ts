@@ -482,13 +482,30 @@ export async function patchTicket(
 	}
 
 	await invalidateTicketCache(id);
+
+	// closing a ticket frees the customer's verified-address slot when they have no other open tickets
+	if (updates.status === TicketStatus.Closed || updates.status === TicketStatus.WontFix) {
+		await releaseEmailAddressIfNoOpenTickets(Number(updatedRow.customer_id), env).catch(
+			(error: unknown) => console.warn('Failed to release email address on ticket close', error)
+		);
+		await forgetTicketEmailState(id).catch(() => {});
+	}
+
 	return await hydrateTicket(updatedRow, env);
 }
 
 export async function deleteTicket(id: number, env: any): Promise<void> {
 	ensureCollegeDB(env);
+	const existing = await getTicketRowById(id);
 	await run(id.toString(), `DELETE FROM tickets WHERE id = ?`, [id]);
 	await invalidateTicketCache(id);
+
+	if (existing) {
+		await releaseEmailAddressIfNoOpenTickets(Number(existing.customer_id), env).catch(
+			(error: unknown) => console.warn('Failed to release email address on ticket delete', error)
+		);
+		await forgetTicketEmailState(id).catch(() => {});
+	}
 }
 
 export async function listTickets(

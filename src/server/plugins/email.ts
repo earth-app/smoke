@@ -1,108 +1,77 @@
-function extractEmailAddress(value: unknown): { email: string; name?: string } | null {
-	if (!value) {
-		return null;
-	}
-
-	if (typeof value === 'string') {
-		const quotedMatch = value.match(/^(.*)<([^>]+)>$/);
-		if (quotedMatch) {
-			const [, displayName, emailAddress] = quotedMatch;
-			return {
-				name: displayName?.trim().replace(/^"|"$/g, '') || undefined,
-				email: emailAddress?.trim() || ''
-			};
-		}
-
-		return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim()) ? { email: value.trim() } : null;
-	}
-
-	if (Array.isArray(value)) {
-		for (const entry of value) {
-			const parsed = extractEmailAddress(entry);
-			if (parsed) return parsed;
-		}
-
-		return null;
-	}
-
-	if (typeof value === 'object') {
-		const record = value as unknown as Record<string, unknown>;
-		const email =
-			typeof record.email === 'string'
-				? record.email
-				: typeof record.address === 'string'
-					? record.address
-					: typeof record.value === 'string'
-						? record.value
-						: null;
-		if (!email) {
-			return null;
-		}
-
-		return {
-			email: email.trim(),
-			name:
-				typeof record.name === 'string'
-					? record.name
-					: typeof record.personal === 'string'
-						? record.personal
-						: undefined
-		};
-	}
-
-	return null;
-}
-
-function extractEmailBody(message: Record<string, unknown>): string {
-	const candidates = [message.text, message.plainText, message.html, message.body, message.content];
-	for (const candidate of candidates) {
-		if (typeof candidate === 'string' && candidate.trim().length > 0) {
-			return candidate.trim();
-		}
-	}
-
-	return 'Email received.';
-}
-
-function extractEmailSubject(message: Record<string, unknown>): string {
-	const subject = message.subject;
-	if (typeof subject === 'string' && subject.trim().length > 0) {
-		return subject.trim();
-	}
-
-	return 'New email';
-}
-
 export default defineNitroPlugin((nitro) => {
 	nitro.hooks.hook('cloudflare:email', async ({ message, env, context }) => {
 		void context;
 
-		const rawMessage = message as unknown as Record<string, unknown>;
-		const sender = extractEmailAddress(rawMessage.from ?? rawMessage.sender ?? rawMessage.replyTo);
-		if (!sender?.email) {
-			console.warn('Skipping inbound email without a parseable sender address');
+		// degrade calmly when the email engine isn't fully configured
+		if (!isEmailConfigured(env)) {
+			await replyNotConfigured(message).catch((error) =>
+				console.warn('Failed to send not-configured reply', error)
+			);
 			return;
 		}
 
-		const existingCustomer = await getCustomerByEmail(sender.email, env);
+		let parsed;
+		try {
+			parsed = await parseInboundEmail(message);
+		} catch (error) {
+			console.error('Failed to parse inbound email', error);
+			return;
+		}
+
+		if (!parsed?.from) {
+			try {
+				message.setReject?.('Unable to parse sender address');
+			} catch {
+				// reject is best-effort
+			}
+			return;
+		}
+
+		const existingCustomer = await getCustomerByEmail(parsed.from, env);
 		const customer =
 			existingCustomer ??
 			(await createCustomer(
-				{
-					email: sender.email,
-					name: sender.name || sender.email,
-					tags: []
-				},
+				{ email: parsed.from, name: parsed.name || parsed.from, tags: [] },
 				env
 			));
 
-		await createTicket(
-			{
-				title: extractEmailSubject(rawMessage),
-				description: extractEmailBody(rawMessage),
-				customer_id: customer.id
-			},
-			env
-		);
+		// thread a reply into its existing ticket, otherwise open a new conversation
+		let ticketId = await resolveTicketForInbound(parsed);
+		let isNewTicket = false;
+		let ticketTitle = parsed.subject;
+
+		if (ticketId) {
+			await addTicketMessage(
+				ticketId,
+				{
+					message: parsed.text,
+					sender: { kind: 'customer', id: customer.id, email: parsed.from, name: parsed.name }
+				},
+				env
+			);
+		} else {
+			const ticket = await createTicket(
+				{ title: parsed.subject, description: parsed.text, customer_id: customer.id },
+				env
+			);
+			ticketId = ticket.id;
+			ticketTitle = ticket.title;
+			isNewTicket = true;
+			await initEmailThread(ticketId, parsed.subject, parsed.from);
+		}
+
+		if (parsed.messageId) await indexMessageId(parsed.messageId, ticketId);
+		await recordInboundOnThread(ticketId, parsed);
+
+		if (isNewTicket) {
+			const state = await ensureThreadVerification(parsed.from, ticketId, env);
+			await sendAutoAck(message, parsed, ticketId, ticketTitle, state, env).catch((error) =>
+				console.warn('Failed to send auto-ack reply', error)
+			);
+		}
+
+		await reapStaleUnverified(env).catch(() => {
+			// reaper is best-effort
+		});
 	});
 });

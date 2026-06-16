@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
 	}
 
 	try {
-		return await addTicketMessage(
+		const created = await addTicketMessage(
 			id,
 			{
 				message: body.message,
@@ -42,6 +42,13 @@ export default defineEventHandler(async (event) => {
 			},
 			event.context.cloudflare.env
 		);
+
+		// mirror the reply to the customer over email when the ticket is an active email thread
+		await sendTicketEmailReply(id, body.message, event.context.cloudflare.env).catch(
+			(error: unknown) => console.warn('Failed to send ticket email reply', error)
+		);
+
+		return created;
 	} catch (error) {
 		if (typeof error === 'object' && error !== null && 'statusCode' in error) {
 			throw error;
