@@ -1,4 +1,3 @@
-import { createCustomer, ensureLoggedIn } from '~/server/utils';
 import { Permission } from '~/shared/types/user';
 import * as schemas from '~/shared/utils/schemas';
 

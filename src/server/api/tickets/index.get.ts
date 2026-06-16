@@ -1,5 +1,4 @@
-import { DBTicket, ensureCollegeDB } from '~/server/db/schema';
-import { getOptionalLoggedIn, listTickets, query } from '~/server/utils';
+import { DBTicket, ensureCollegeDB } from 'hub:db:schema';
 
 export default defineEventHandler(async (event) => {
 	try {

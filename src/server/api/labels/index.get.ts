@@ -1,5 +1,3 @@
-import { ensureLoggedIn, listLabels } from '~/server/utils';
-
 export default defineEventHandler(async (event) => {
 	await ensureLoggedIn(event);
 

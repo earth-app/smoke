@@ -1,5 +1,4 @@
 import z from 'zod';
-import { getOptionalLoggedIn, getTicketById } from '~/server/utils';
 import * as schemas from '~/shared/utils/schemas';
 
 export default defineEventHandler(async (event) => {

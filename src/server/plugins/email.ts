@@ -1,5 +1,3 @@
-import { createCustomer, createTicket, getCustomerByEmail } from '~/server/utils';
-
 function extractEmailAddress(value: unknown): { email: string; name?: string } | null {
 	if (!value) {
 		return null;

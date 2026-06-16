@@ -1,4 +1,3 @@
-import { ensureLoggedIn, listCustomers, query } from '~/server/utils';
 import type { Customer } from '~/shared/types/user';
 import { Permission } from '~/shared/types/user';
 

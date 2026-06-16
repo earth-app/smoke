@@ -1,5 +1,4 @@
-import { DBUser, ensureCollegeDB } from '~/server/db/schema';
-import { listUsers, query } from '~/server/utils';
+import { DBUser, ensureCollegeDB } from 'hub:db:schema';
 
 export default defineEventHandler(async (event) => {
 	const { search, page, limit, offset, sort, sort_direction } = query(event, [

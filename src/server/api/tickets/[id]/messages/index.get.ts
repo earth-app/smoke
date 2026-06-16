@@ -1,10 +1,4 @@
 import z from 'zod';
-import {
-	getOptionalLoggedIn,
-	getTicketById,
-	listTicketMessages,
-	primitiveQuery
-} from '~/server/utils';
 import { TicketMessage } from '~/shared/types/ticket';
 import * as schemas from '~/shared/utils/schemas';
 

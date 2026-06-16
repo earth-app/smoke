@@ -1,5 +1,4 @@
 import z from 'zod';
-import { ensureCanWriteTo, ensureLoggedIn, getUserBy, patchUser } from '~/server/utils';
 import * as schemas from '~/shared/utils/schemas';
 
 export default defineEventHandler(async (event) => {
@@ -18,6 +17,16 @@ export default defineEventHandler(async (event) => {
 	await ensureCanWriteTo(current, target);
 
 	const body = await readValidatedBody(event, schemas.userPatchBody.parse);
+
+	// avatar is managed via POST/DELETE /api/users/[id]/avatar, not here
+	if (body.avatar_url !== undefined) {
+		throw createError({
+			statusCode: 400,
+			message: 'Set the avatar through the avatar endpoints, not this route',
+			data: { success: false }
+		});
+	}
+
 	const updatedUser = await patchUser(target, body, event.context.cloudflare.env);
 	return updatedUser;
 });
