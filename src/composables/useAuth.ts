@@ -5,16 +5,9 @@ export function useAuth() {
 
 	const sessionToken = computed(() => authStore.sessionToken);
 	const user = computed(() => authStore.currentUser);
-	const fetchUser = async (force: boolean = false) => {
-		try {
-			await authStore.fetchCurrentUser(force);
-		} catch (error) {
-			console.error('Failed to fetch current user:', error);
-		}
-	};
+
 	const isAuthenticated = computed(() => authStore.isAuthenticated);
 	const isAdmin = computed(() => authStore.isAdmin);
-
 	const isManager = computed(
 		() => user.value?.role === Role.Manager || user.value?.role === Role.Admin
 	);
@@ -24,6 +17,26 @@ export function useAuth() {
 			user.value?.role === Role.Manager ||
 			user.value?.role === Role.Admin
 	);
+
+	const fetchUser = async (force: boolean = false) => {
+		try {
+			await authStore.fetchCurrentUser(force);
+		} catch (error) {
+			console.error('Failed to fetch current user:', error);
+		}
+	};
+
+	const updateUser = async (user: Partial<User>) => {
+		try {
+			await authStore.updateUser(user);
+			return { success: true, message: 'User updated successfully' };
+		} catch (error) {
+			return {
+				success: false,
+				message: error instanceof Error ? error.message : 'An unknown error occurred'
+			};
+		}
+	};
 
 	const login = async (usernameOrEmail: string, password: string) => {
 		try {
@@ -49,15 +62,24 @@ export function useAuth() {
 		}
 	};
 
+	const setSessionToken = (token: string | null) => {
+		authStore.setSessionToken(token);
+	};
+
+	// load user state
+	fetchUser();
+
 	return {
 		sessionToken,
 		user,
-		fetchUser,
-		login,
-		logout,
 		isAuthenticated,
 		isAdmin,
 		isManager,
-		isAgent
+		isAgent,
+		fetchUser,
+		updateUser,
+		login,
+		logout,
+		setSessionToken
 	};
 }

@@ -150,7 +150,7 @@ export async function getOptionalLoggedIn(event: H3Event): Promise<User | null> 
 	try {
 		return await ensureLoggedIn(event);
 	} catch (error) {
-		if (isHttpError(error)) {
+		if (isError(error)) {
 			return null;
 		}
 
