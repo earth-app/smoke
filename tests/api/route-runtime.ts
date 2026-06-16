@@ -13,7 +13,12 @@ import '#server-utils';
 
 export const TEST_ENV = {
 	MASTER_KEY: 'm'.repeat(32),
-	HMAC_SECRET: 'h'.repeat(32)
+	HMAC_SECRET: 'h'.repeat(32),
+	CF_API_TOKEN: 'cf-test-token',
+	CF_ACCOUNT_ID: 'cf-test-account',
+	SUPPORT_EMAIL: 'support@smoke.example.com',
+	NUXT_PUBLIC_SITE_URL: 'https://smoke.example.com',
+	EMAIL: { send: vi.fn(async () => ({})) }
 };
 
 export const MANAGER_PERMISSIONS: Permission[] = [
