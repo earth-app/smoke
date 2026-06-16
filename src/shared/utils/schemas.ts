@@ -22,8 +22,10 @@ export const email = z.email().max(128, 'Emails cannot be longer than 128 charac
 
 export const avatar_url = z
 	.url()
-	.max(512, 'Avatar URLs must be shorter than 512 characters')
-	.optional();
+	.refine((url) => new URL(url).protocol === 'https:', 'Avatar URL must be HTTPS')
+	.max(256, 'Avatar URL cannot be longer than 256 characters')
+	.optional()
+	.describe('An optional URL string that points to an avatar image for a user or customer');
 
 // #endregion
 
