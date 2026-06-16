@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TicketPriority, TicketStatus } from '../../../../../../src/shared/types/ticket';
+import { TicketPriority, TicketStatus } from '~/shared/types/ticket';
 import {
 	eventFor,
 	getRuntime,
@@ -24,7 +24,7 @@ describe('DELETE /api/tickets/:id/messages/:messageId', () => {
 			priority: TicketPriority.High,
 			assignee_ids: [agent.id]
 		});
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		const created = await utils.addTicketMessage(
 			ticket.id,
 			{
@@ -40,7 +40,7 @@ describe('DELETE /api/tickets/:id/messages/:messageId', () => {
 		);
 
 		const handler = await importRoute(
-			'../../../../../../src/server/api/tickets/[id]/messages/[messageId]/index.delete'
+			'~/server/api/tickets/[id]/messages/[messageId]/index.delete'
 		);
 		mockParams({ id: ticket.id, messageId: created.id });
 		await expect(handler(eventFor(runtime.env, agent.sessionToken))).resolves.toBeNull();
@@ -59,7 +59,7 @@ describe('DELETE /api/tickets/:id/messages/:messageId', () => {
 			priority: TicketPriority.High,
 			assignee_ids: [manager.id, author.id]
 		});
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		const created = await utils.addTicketMessage(
 			ticket.id,
 			{
@@ -75,7 +75,7 @@ describe('DELETE /api/tickets/:id/messages/:messageId', () => {
 		);
 
 		const handler = await importRoute(
-			'../../../../../../src/server/api/tickets/[id]/messages/[messageId]/index.delete'
+			'~/server/api/tickets/[id]/messages/[messageId]/index.delete'
 		);
 		mockParams({ id: ticket.id, messageId: created.id });
 		await expect(handler(eventFor(runtime.env, manager.sessionToken))).resolves.toBeNull();
@@ -94,7 +94,7 @@ describe('DELETE /api/tickets/:id/messages/:messageId', () => {
 			priority: TicketPriority.High,
 			assignee_ids: [author.id, other.id]
 		});
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		const created = await utils.addTicketMessage(
 			ticket.id,
 			{
@@ -110,7 +110,7 @@ describe('DELETE /api/tickets/:id/messages/:messageId', () => {
 		);
 
 		const handler = await importRoute(
-			'../../../../../../src/server/api/tickets/[id]/messages/[messageId]/index.delete'
+			'~/server/api/tickets/[id]/messages/[messageId]/index.delete'
 		);
 		mockParams({ id: ticket.id, messageId: created.id });
 

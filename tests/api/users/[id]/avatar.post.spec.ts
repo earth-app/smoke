@@ -11,7 +11,7 @@ import {
 	seedManager
 } from '../../route-runtime';
 
-const ROUTE = '../../../../src/server/api/users/[id]/avatar.post';
+const ROUTE = '~/server/api/users/[id]/avatar.post';
 
 describe('POST /api/users/:id/avatar', () => {
 	it('rejects an unauthenticated request with 401', async () => {

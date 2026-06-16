@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TicketPriority, TicketStatus } from '../../src/shared/types/ticket';
+import { TicketPriority, TicketStatus } from '~/shared/types/ticket';
 import {
 	eventFor,
 	getRuntime,
@@ -26,7 +26,7 @@ import {
 describe('hot-path cache behavior', () => {
 	it('ensureLoggedIn returns the same User across consecutive calls (cached decryptUser)', async () => {
 		const runtime = getRuntime();
-		const utils = await import('../../src/server/utils');
+		const utils = await import('#server-utils');
 		const agent = await seedAgent(runtime);
 
 		const first = await utils.ensureLoggedIn(eventFor(runtime.env, agent.sessionToken));
@@ -50,7 +50,7 @@ describe('hot-path cache behavior', () => {
 			priority: TicketPriority.High,
 			assignee_ids: [manager.id]
 		});
-		const handler = await importRoute('../../src/server/api/tickets/[id]/index.get');
+		const handler = await importRoute('~/server/api/tickets/[id]/index.get');
 		mockParams({ id: ticket.id });
 
 		const cold = (await handler(eventFor(runtime.env, manager.sessionToken))) as {
@@ -75,7 +75,7 @@ describe('hot-path cache behavior', () => {
 		const runtime = getRuntime();
 		const manager = await seedManager(runtime);
 		const customer = await seedCustomer(runtime, { name: 'CachedCust', email: 'cc@example.com' });
-		const handler = await importRoute('../../src/server/api/customers/[id]/index.get');
+		const handler = await importRoute('~/server/api/customers/[id]/index.get');
 		mockParams({ id: customer.id });
 
 		const cold = (await handler(eventFor(runtime.env, manager.sessionToken))) as {
@@ -99,7 +99,7 @@ describe('hot-path cache behavior', () => {
 describe('cache invalidation guarantees', () => {
 	it('patchTicket invalidates the ticket cache so the next read sees fresh data', async () => {
 		const runtime = getRuntime();
-		const utils = await import('../../src/server/utils');
+		const utils = await import('#server-utils');
 		const manager = await seedManager(runtime);
 		const customer = await seedCustomer(runtime, { name: 'C', email: 'c@example.com' });
 		const ticket = await seedTicket(runtime, {
@@ -122,7 +122,7 @@ describe('cache invalidation guarantees', () => {
 
 	it('addTicketMessage invalidates the ticket cache (writeTicketSections updates updated_at)', async () => {
 		const runtime = getRuntime();
-		const utils = await import('../../src/server/utils');
+		const utils = await import('#server-utils');
 		const agent = await seedAgent(runtime);
 		const customer = await seedCustomer(runtime, { name: 'C', email: 'c@example.com' });
 		const ticket = await seedTicket(runtime, {
@@ -157,7 +157,7 @@ describe('cache invalidation guarantees', () => {
 
 	it('deleteTicket invalidates the ticket cache so the next read returns null', async () => {
 		const runtime = getRuntime();
-		const utils = await import('../../src/server/utils');
+		const utils = await import('#server-utils');
 		const manager = await seedManager(runtime);
 		const customer = await seedCustomer(runtime, { name: 'C', email: 'c@example.com' });
 		const ticket = await seedTicket(runtime, {
@@ -177,7 +177,7 @@ describe('cache invalidation guarantees', () => {
 
 	it('patchCustomer invalidates the customer cache so the next read sees fresh data', async () => {
 		const runtime = getRuntime();
-		const utils = await import('../../src/server/utils');
+		const utils = await import('#server-utils');
 		const customer = await seedCustomer(runtime, { name: 'old', email: 'old@example.com' });
 
 		const before = await utils.getCustomerById(customer.id, runtime.env);
@@ -191,7 +191,7 @@ describe('cache invalidation guarantees', () => {
 
 	it('patchUser invalidates the user cache so updated permissions take effect immediately', async () => {
 		const runtime = getRuntime();
-		const utils = await import('../../src/server/utils');
+		const utils = await import('#server-utils');
 		const agent = await seedAgent(runtime);
 
 		const before = await utils.getUserById(agent.id, runtime.env);

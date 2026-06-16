@@ -4,7 +4,7 @@ import { eventFor, getRuntime, importRoute, mockBody, seedAgent } from '../route
 describe('POST /api/users/login', () => {
 	it('returns a session token for valid credentials', async () => {
 		const runtime = getRuntime();
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		const created = await utils.createUser(
 			'login_user',
 			'login@example.com',
@@ -12,7 +12,7 @@ describe('POST /api/users/login', () => {
 			runtime.env
 		);
 		await utils.setInitialPassword(created.id, 'StrongPass123!');
-		const handler = await importRoute('../../../src/server/api/users/login.post');
+		const handler = await importRoute('~/server/api/users/login.post');
 
 		mockBody({ usernameOrEmail: 'login_user', password: 'StrongPass123!' });
 
@@ -28,10 +28,10 @@ describe('POST /api/users/login', () => {
 
 	it('rejects invalid passwords with 401', async () => {
 		const runtime = getRuntime();
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		const created = await seedAgent(runtime);
 		await utils.setInitialPassword(created.id, 'StrongPass123!');
-		const handler = await importRoute('../../../src/server/api/users/login.post');
+		const handler = await importRoute('~/server/api/users/login.post');
 
 		mockBody({ usernameOrEmail: 'agent_user', password: 'WrongPass1!' });
 		await expect(handler(eventFor(runtime.env))).rejects.toMatchObject({ statusCode: 401 });
@@ -40,7 +40,7 @@ describe('POST /api/users/login', () => {
 	it('rejects login when password has not been set', async () => {
 		const runtime = getRuntime();
 		await seedAgent(runtime);
-		const handler = await importRoute('../../../src/server/api/users/login.post');
+		const handler = await importRoute('~/server/api/users/login.post');
 
 		mockBody({ usernameOrEmail: 'agent_user', password: 'StrongPass123!' });
 		await expect(handler(eventFor(runtime.env))).rejects.toMatchObject({ statusCode: 400 });
@@ -48,10 +48,10 @@ describe('POST /api/users/login', () => {
 
 	it('accepts email instead of username', async () => {
 		const runtime = getRuntime();
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		const created = await seedAgent(runtime);
 		await utils.setInitialPassword(created.id, 'StrongPass123!');
-		const handler = await importRoute('../../../src/server/api/users/login.post');
+		const handler = await importRoute('~/server/api/users/login.post');
 
 		mockBody({ usernameOrEmail: 'agent@example.com', password: 'StrongPass123!' });
 		const result = (await handler(eventFor(runtime.env))) as { success: boolean };

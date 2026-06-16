@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TicketPriority, TicketStatus } from '../../../../../../src/shared/types/ticket';
+import { TicketPriority, TicketStatus } from '~/shared/types/ticket';
 import {
 	eventFor,
 	getRuntime,
@@ -23,7 +23,7 @@ describe('GET /api/tickets/:id/messages/:messageId', () => {
 			priority: TicketPriority.High,
 			assignee_ids: [agent.id]
 		});
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		const created = await utils.addTicketMessage(
 			ticket.id,
 			{
@@ -38,9 +38,7 @@ describe('GET /api/tickets/:id/messages/:messageId', () => {
 			runtime.env
 		);
 
-		const handler = await importRoute(
-			'../../../../../../src/server/api/tickets/[id]/messages/[messageId]/index.get'
-		);
+		const handler = await importRoute('~/server/api/tickets/[id]/messages/[messageId]/index.get');
 		mockParams({ id: ticket.id, messageId: created.id });
 
 		await expect(handler(eventFor(runtime.env, agent.sessionToken))).resolves.toMatchObject({
@@ -60,9 +58,7 @@ describe('GET /api/tickets/:id/messages/:messageId', () => {
 			priority: TicketPriority.High
 		});
 
-		const handler = await importRoute(
-			'../../../../../../src/server/api/tickets/[id]/messages/[messageId]/index.get'
-		);
+		const handler = await importRoute('~/server/api/tickets/[id]/messages/[messageId]/index.get');
 		mockParams({ id: ticket.id, messageId: 100 });
 		await expect(handler(eventFor(runtime.env))).rejects.toMatchObject({ statusCode: 404 });
 	});

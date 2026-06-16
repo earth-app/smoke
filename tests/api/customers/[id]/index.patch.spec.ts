@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Permission } from '../../../../src/shared/types/user';
+import { Permission } from '~/shared/types/user';
 import {
 	eventFor,
 	getRuntime,
@@ -19,7 +19,7 @@ describe('PATCH /api/customers/:id', () => {
 			name: 'Alice',
 			email: 'alice@example.com'
 		});
-		const handler = await importRoute('../../../../src/server/api/customers/[id]/index.patch');
+		const handler = await importRoute('~/server/api/customers/[id]/index.patch');
 
 		mockParams({ id: customer.id });
 		mockBody({ name: 'Alice Updated' });
@@ -42,7 +42,7 @@ describe('PATCH /api/customers/:id', () => {
 			name: 'Alice',
 			email: 'alice@example.com'
 		});
-		const handler = await importRoute('../../../../src/server/api/customers/[id]/index.patch');
+		const handler = await importRoute('~/server/api/customers/[id]/index.patch');
 
 		mockParams({ id: customer.id });
 		mockBody({ name: 'Alice Updated' });
@@ -55,7 +55,7 @@ describe('PATCH /api/customers/:id', () => {
 	it('throws 404 when customer does not exist', async () => {
 		const runtime = getRuntime();
 		const manager = await seedManager(runtime);
-		const handler = await importRoute('../../../../src/server/api/customers/[id]/index.patch');
+		const handler = await importRoute('~/server/api/customers/[id]/index.patch');
 
 		mockParams({ id: 9999 });
 		mockBody({ name: 'whoever' });

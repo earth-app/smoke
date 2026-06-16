@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TicketPriority, TicketStatus } from '../../../../src/shared/types/ticket';
+import { TicketPriority, TicketStatus } from '~/shared/types/ticket';
 import {
 	eventFor,
 	getRuntime,
@@ -24,7 +24,7 @@ describe('PATCH /api/tickets/:id', () => {
 			status: TicketStatus.Open,
 			priority: TicketPriority.Low
 		});
-		const handler = await importRoute('../../../../src/server/api/tickets/[id]/index.patch');
+		const handler = await importRoute('~/server/api/tickets/[id]/index.patch');
 
 		mockParams({ id: ticket.id });
 		mockBody({ title: 'New title', priority: TicketPriority.High });
@@ -46,7 +46,7 @@ describe('PATCH /api/tickets/:id', () => {
 			status: TicketStatus.Open,
 			priority: TicketPriority.Low
 		});
-		const handler = await importRoute('../../../../src/server/api/tickets/[id]/index.patch');
+		const handler = await importRoute('~/server/api/tickets/[id]/index.patch');
 
 		mockParams({ id: ticket.id });
 		mockBody({ title: 'New' });
@@ -58,7 +58,7 @@ describe('PATCH /api/tickets/:id', () => {
 	it('throws 404 when the ticket does not exist', async () => {
 		const runtime = getRuntime();
 		const manager = await seedManager(runtime);
-		const handler = await importRoute('../../../../src/server/api/tickets/[id]/index.patch');
+		const handler = await importRoute('~/server/api/tickets/[id]/index.patch');
 
 		mockParams({ id: 9999 });
 		mockBody({ title: 'whatever' });

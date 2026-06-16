@@ -17,7 +17,7 @@ describe('DELETE /api/customers/:id', () => {
 			name: 'Alice',
 			email: 'alice@example.com'
 		});
-		const handler = await importRoute('../../../../src/server/api/customers/[id]/index.delete');
+		const handler = await importRoute('~/server/api/customers/[id]/index.delete');
 
 		mockParams({ id: customer.id });
 		await expect(handler(eventFor(runtime.env, manager.sessionToken))).resolves.toBeNull();
@@ -36,7 +36,7 @@ describe('DELETE /api/customers/:id', () => {
 			name: 'Alice',
 			email: 'alice@example.com'
 		});
-		const handler = await importRoute('../../../../src/server/api/customers/[id]/index.delete');
+		const handler = await importRoute('~/server/api/customers/[id]/index.delete');
 
 		mockParams({ id: customer.id });
 		await expect(handler(eventFor(runtime.env, agent.sessionToken))).rejects.toMatchObject({
@@ -47,7 +47,7 @@ describe('DELETE /api/customers/:id', () => {
 	it('throws 404 when customer does not exist', async () => {
 		const runtime = getRuntime();
 		const manager = await seedManager(runtime);
-		const handler = await importRoute('../../../../src/server/api/customers/[id]/index.delete');
+		const handler = await importRoute('~/server/api/customers/[id]/index.delete');
 
 		mockParams({ id: 9999 });
 		await expect(handler(eventFor(runtime.env, manager.sessionToken))).rejects.toMatchObject({

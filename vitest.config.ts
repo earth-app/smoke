@@ -9,9 +9,17 @@ export default defineConfig({
 		})
 	],
 	resolve: {
-		alias: {
-			'~': fileURLToPath(new URL('./src', import.meta.url))
-		}
+		alias: [
+			{
+				find: '#server-utils',
+				replacement: fileURLToPath(new URL('./tests/server-utils.ts', import.meta.url))
+			},
+			{
+				find: 'hub:db:schema',
+				replacement: fileURLToPath(new URL('./src/server/db/schema.ts', import.meta.url))
+			},
+			{ find: '~', replacement: fileURLToPath(new URL('./src', import.meta.url)) }
+		]
 	},
 	test: {
 		environment: 'node',

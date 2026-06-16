@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TicketPriority, TicketStatus } from '../../../../src/shared/types/ticket';
+import { TicketPriority, TicketStatus } from '~/shared/types/ticket';
 import {
 	eventFor,
 	getRuntime,
@@ -23,7 +23,7 @@ describe('DELETE /api/tickets/:id', () => {
 			status: TicketStatus.Open,
 			priority: TicketPriority.Low
 		});
-		const handler = await importRoute('../../../../src/server/api/tickets/[id]/index.delete');
+		const handler = await importRoute('~/server/api/tickets/[id]/index.delete');
 
 		mockParams({ id: ticket.id });
 		await expect(handler(eventFor(runtime.env, manager.sessionToken))).resolves.toBeNull();
@@ -46,7 +46,7 @@ describe('DELETE /api/tickets/:id', () => {
 			status: TicketStatus.Open,
 			priority: TicketPriority.Low
 		});
-		const handler = await importRoute('../../../../src/server/api/tickets/[id]/index.delete');
+		const handler = await importRoute('~/server/api/tickets/[id]/index.delete');
 
 		mockParams({ id: ticket.id });
 		await expect(handler(eventFor(runtime.env, agent.sessionToken))).rejects.toMatchObject({
@@ -57,7 +57,7 @@ describe('DELETE /api/tickets/:id', () => {
 	it('throws 404 when ticket does not exist', async () => {
 		const runtime = getRuntime();
 		const manager = await seedManager(runtime);
-		const handler = await importRoute('../../../../src/server/api/tickets/[id]/index.delete');
+		const handler = await importRoute('~/server/api/tickets/[id]/index.delete');
 
 		mockParams({ id: 9999 });
 		await expect(handler(eventFor(runtime.env, manager.sessionToken))).rejects.toMatchObject({

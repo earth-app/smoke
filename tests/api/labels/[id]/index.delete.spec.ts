@@ -14,7 +14,7 @@ describe('DELETE /api/labels/:id', () => {
 		const runtime = getRuntime();
 		const manager = await seedManager(runtime);
 		const label = await seedLabel(runtime, 'vip');
-		const handler = await importRoute('../../../../src/server/api/labels/[id]/index.delete');
+		const handler = await importRoute('~/server/api/labels/[id]/index.delete');
 
 		mockParams({ id: label.id });
 		await expect(handler(eventFor(runtime.env, manager.sessionToken))).resolves.toBeNull();
@@ -30,7 +30,7 @@ describe('DELETE /api/labels/:id', () => {
 		const runtime = getRuntime();
 		const agent = await seedAgent(runtime);
 		const label = await seedLabel(runtime, 'vip');
-		const handler = await importRoute('../../../../src/server/api/labels/[id]/index.delete');
+		const handler = await importRoute('~/server/api/labels/[id]/index.delete');
 
 		mockParams({ id: label.id });
 		await expect(handler(eventFor(runtime.env, agent.sessionToken))).rejects.toMatchObject({
@@ -41,7 +41,7 @@ describe('DELETE /api/labels/:id', () => {
 	it('throws 404 when label does not exist', async () => {
 		const runtime = getRuntime();
 		const manager = await seedManager(runtime);
-		const handler = await importRoute('../../../../src/server/api/labels/[id]/index.delete');
+		const handler = await importRoute('~/server/api/labels/[id]/index.delete');
 
 		mockParams({ id: 9999 });
 		await expect(handler(eventFor(runtime.env, manager.sessionToken))).rejects.toMatchObject({

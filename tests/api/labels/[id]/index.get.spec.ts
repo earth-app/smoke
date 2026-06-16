@@ -13,7 +13,7 @@ describe('GET /api/labels/:id', () => {
 		const runtime = getRuntime();
 		const agent = await seedAgent(runtime);
 		const label = await seedLabel(runtime, 'vip', '#112233');
-		const handler = await importRoute('../../../../src/server/api/labels/[id]/index.get');
+		const handler = await importRoute('~/server/api/labels/[id]/index.get');
 
 		mockParams({ id: label.id });
 		await expect(handler(eventFor(runtime.env, agent.sessionToken))).resolves.toMatchObject({
@@ -25,7 +25,7 @@ describe('GET /api/labels/:id', () => {
 	it('throws 404 when label does not exist', async () => {
 		const runtime = getRuntime();
 		const agent = await seedAgent(runtime);
-		const handler = await importRoute('../../../../src/server/api/labels/[id]/index.get');
+		const handler = await importRoute('~/server/api/labels/[id]/index.get');
 
 		mockParams({ id: 9999 });
 		await expect(handler(eventFor(runtime.env, agent.sessionToken))).rejects.toMatchObject({

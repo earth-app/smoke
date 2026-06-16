@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TicketPriority, TicketStatus } from '../../../../../src/shared/types/ticket';
+import { TicketPriority, TicketStatus } from '~/shared/types/ticket';
 import {
 	eventFor,
 	getRuntime,
@@ -25,7 +25,7 @@ describe('DELETE /api/tickets/:id/messages', () => {
 			assignee_ids: [manager.id]
 		});
 
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		await utils.addTicketMessage(
 			ticket.id,
 			{
@@ -40,9 +40,7 @@ describe('DELETE /api/tickets/:id/messages', () => {
 			runtime.env
 		);
 
-		const handler = await importRoute(
-			'../../../../../src/server/api/tickets/[id]/messages/index.delete'
-		);
+		const handler = await importRoute('~/server/api/tickets/[id]/messages/index.delete');
 		mockParams({ id: ticket.id });
 		await expect(handler(eventFor(runtime.env, manager.sessionToken))).resolves.toBeNull();
 
@@ -69,9 +67,7 @@ describe('DELETE /api/tickets/:id/messages', () => {
 			priority: TicketPriority.High
 		});
 
-		const handler = await importRoute(
-			'../../../../../src/server/api/tickets/[id]/messages/index.delete'
-		);
+		const handler = await importRoute('~/server/api/tickets/[id]/messages/index.delete');
 		mockParams({ id: ticket.id });
 		await expect(handler(eventFor(runtime.env, agent.sessionToken))).rejects.toMatchObject({
 			statusCode: 403

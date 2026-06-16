@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { TicketPriority, TicketStatus } from '../../src/shared/types/ticket';
-import { Permission } from '../../src/shared/types/user';
+import { TicketPriority, TicketStatus } from '~/shared/types/ticket';
+import { Permission } from '~/shared/types/user';
 import {
 	getRuntime,
 	seedAgent,
@@ -15,7 +15,7 @@ import {
 describe('server/utils extra coverage', () => {
 	it('evicts the oldest session when a user exceeds the active-token cap', async () => {
 		const runtime = getRuntime();
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		const agent = await seedAgent(runtime);
 
 		// emit 6 distinct sessions; the oldest of those should be evicted to keep the count at 5
@@ -43,7 +43,7 @@ describe('server/utils extra coverage', () => {
 
 	it('rejects ensureLoggedIn for malformed headers and missing tokens', async () => {
 		const runtime = getRuntime();
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 
 		await expect(
 			utils.ensureLoggedIn({
@@ -69,7 +69,7 @@ describe('server/utils extra coverage', () => {
 
 	it('getOptionalLoggedIn returns null for missing or invalid headers and a user otherwise', async () => {
 		const runtime = getRuntime();
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 
 		await expect(
 			utils.getOptionalLoggedIn({
@@ -96,7 +96,7 @@ describe('server/utils extra coverage', () => {
 
 	it('ensureCanWriteTo enforces self/admin/manage gates', async () => {
 		const runtime = getRuntime();
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		const manager = await seedManager(runtime);
 		const agent = await seedUser(runtime, {
 			username: 'agent_one',
@@ -118,7 +118,7 @@ describe('server/utils extra coverage', () => {
 
 	it('hydrates a ticket thread with messages from a mixed sender list', async () => {
 		const runtime = getRuntime();
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		const manager = await seedManager(runtime);
 		const customer = await seedCustomer(runtime, { name: 'Cust', email: 'c@example.com' });
 		const ticket = await seedTicket(runtime, {
@@ -159,7 +159,7 @@ describe('server/utils extra coverage', () => {
 
 	it('edits and then deletes a message via the utility helpers', async () => {
 		const runtime = getRuntime();
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		const manager = await seedManager(runtime);
 		const customer = await seedCustomer(runtime, { name: 'Cust', email: 'c@example.com' });
 		const ticket = await seedTicket(runtime, {
@@ -213,7 +213,7 @@ describe('server/utils extra coverage', () => {
 
 	it('looks up customers by email and falls back to a full-shard scan', async () => {
 		const runtime = getRuntime();
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		const customer = await seedCustomer(runtime, {
 			name: 'Lookup',
 			email: 'lookup@example.com'
@@ -236,7 +236,7 @@ describe('server/utils extra coverage', () => {
 
 	it('lists labels and tickets through their utility wrappers', async () => {
 		const runtime = getRuntime();
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		await seedLabel(runtime, 'vip');
 		await seedLabel(runtime, 'urgent');
 		expect((await utils.listLabels()).map((l) => l.name).sort()).toEqual(['urgent', 'vip']);

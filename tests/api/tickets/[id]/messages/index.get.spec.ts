@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TicketPriority, TicketStatus } from '../../../../../src/shared/types/ticket';
+import { TicketPriority, TicketStatus } from '~/shared/types/ticket';
 import {
 	eventFor,
 	getRuntime,
@@ -25,7 +25,7 @@ describe('GET /api/tickets/:id/messages', () => {
 			assignee_ids: [agent.id]
 		});
 
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		await utils.addTicketMessage(
 			ticket.id,
 			{
@@ -40,9 +40,7 @@ describe('GET /api/tickets/:id/messages', () => {
 			runtime.env
 		);
 
-		const handler = await importRoute(
-			'../../../../../src/server/api/tickets/[id]/messages/index.get'
-		);
+		const handler = await importRoute('~/server/api/tickets/[id]/messages/index.get');
 		mockParams({ id: ticket.id });
 		mockQuery({});
 
@@ -54,9 +52,7 @@ describe('GET /api/tickets/:id/messages', () => {
 
 	it('throws 404 when the ticket does not exist', async () => {
 		const runtime = getRuntime();
-		const handler = await importRoute(
-			'../../../../../src/server/api/tickets/[id]/messages/index.get'
-		);
+		const handler = await importRoute('~/server/api/tickets/[id]/messages/index.get');
 		mockParams({ id: 9999 });
 		mockQuery({});
 		await expect(handler(eventFor(runtime.env))).rejects.toMatchObject({ statusCode: 404 });

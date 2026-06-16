@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TicketPriority, TicketStatus } from '../../../../../../src/shared/types/ticket';
+import { TicketPriority, TicketStatus } from '~/shared/types/ticket';
 import {
 	eventFor,
 	getRuntime,
@@ -25,7 +25,7 @@ describe('PATCH /api/tickets/:id/messages/:messageId', () => {
 			priority: TicketPriority.High,
 			assignee_ids: [agent.id]
 		});
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		const created = await utils.addTicketMessage(
 			ticket.id,
 			{
@@ -40,9 +40,7 @@ describe('PATCH /api/tickets/:id/messages/:messageId', () => {
 			runtime.env
 		);
 
-		const handler = await importRoute(
-			'../../../../../../src/server/api/tickets/[id]/messages/[messageId]/index.patch'
-		);
+		const handler = await importRoute('~/server/api/tickets/[id]/messages/[messageId]/index.patch');
 		mockParams({ id: ticket.id, messageId: created.id });
 		mockBody({ message: 'edited' });
 
@@ -65,7 +63,7 @@ describe('PATCH /api/tickets/:id/messages/:messageId', () => {
 			priority: TicketPriority.High,
 			assignee_ids: [manager.id, author.id]
 		});
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		const created = await utils.addTicketMessage(
 			ticket.id,
 			{
@@ -80,9 +78,7 @@ describe('PATCH /api/tickets/:id/messages/:messageId', () => {
 			runtime.env
 		);
 
-		const handler = await importRoute(
-			'../../../../../../src/server/api/tickets/[id]/messages/[messageId]/index.patch'
-		);
+		const handler = await importRoute('~/server/api/tickets/[id]/messages/[messageId]/index.patch');
 		mockParams({ id: ticket.id, messageId: created.id });
 		mockBody({ message: 'rewritten by manager' });
 
@@ -104,7 +100,7 @@ describe('PATCH /api/tickets/:id/messages/:messageId', () => {
 			priority: TicketPriority.High,
 			assignee_ids: [author.id, other.id]
 		});
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		const created = await utils.addTicketMessage(
 			ticket.id,
 			{
@@ -119,9 +115,7 @@ describe('PATCH /api/tickets/:id/messages/:messageId', () => {
 			runtime.env
 		);
 
-		const handler = await importRoute(
-			'../../../../../../src/server/api/tickets/[id]/messages/[messageId]/index.patch'
-		);
+		const handler = await importRoute('~/server/api/tickets/[id]/messages/[messageId]/index.patch');
 		mockParams({ id: ticket.id, messageId: created.id });
 		mockBody({ message: 'hijack' });
 

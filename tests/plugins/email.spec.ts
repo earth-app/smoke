@@ -8,7 +8,7 @@ type EmailHandler = (payload: {
 }) => Promise<void>;
 
 async function loadEmailHandler(): Promise<EmailHandler> {
-	const plugin = (await import('../../src/plugins/email')).default;
+	const plugin = (await import('~/server/plugins/email')).default;
 	let handler: EmailHandler | undefined;
 	plugin({
 		hooks: {
@@ -38,7 +38,7 @@ describe('cloudflare:email plugin', () => {
 			context: {}
 		});
 
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		const customer = await utils.getCustomerByEmail('new@example.com', runtime.env);
 		expect(customer?.email).toBe('new@example.com');
 		expect(customer?.name).toBe('New User');
@@ -52,7 +52,7 @@ describe('cloudflare:email plugin', () => {
 
 	it('reuses an existing customer instead of creating a duplicate', async () => {
 		const runtime = getRuntime();
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		const existing = await utils.createCustomer(
 			{ name: 'Existing', email: 'existing@example.com' },
 			runtime.env
@@ -76,7 +76,7 @@ describe('cloudflare:email plugin', () => {
 
 	it('does nothing when the sender email cannot be parsed', async () => {
 		const runtime = getRuntime();
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		const handler = await loadEmailHandler();
 
 		await handler({
@@ -91,7 +91,7 @@ describe('cloudflare:email plugin', () => {
 
 	it('extracts sender from an array of email addresses', async () => {
 		const runtime = getRuntime();
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		const handler = await loadEmailHandler();
 
 		await handler({
@@ -111,7 +111,7 @@ describe('cloudflare:email plugin', () => {
 
 	it('extracts sender from an object with `address` and `personal` fields', async () => {
 		const runtime = getRuntime();
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		const handler = await loadEmailHandler();
 
 		await handler({
@@ -131,7 +131,7 @@ describe('cloudflare:email plugin', () => {
 
 	it('falls back to default subject and body when the message omits them', async () => {
 		const runtime = getRuntime();
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		const handler = await loadEmailHandler();
 
 		await handler({

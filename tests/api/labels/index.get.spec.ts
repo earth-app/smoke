@@ -7,7 +7,7 @@ describe('GET /api/labels', () => {
 		const agent = await seedAgent(runtime);
 		await seedLabel(runtime, 'vip', '#112233');
 		await seedLabel(runtime, 'urgent');
-		const handler = await importRoute('../../../src/server/api/labels/index.get');
+		const handler = await importRoute('~/server/api/labels/index.get');
 
 		const result = (await handler(eventFor(runtime.env, agent.sessionToken))) as Array<{
 			name: string;
@@ -17,7 +17,7 @@ describe('GET /api/labels', () => {
 
 	it('rejects unauthenticated callers', async () => {
 		const runtime = getRuntime();
-		const handler = await importRoute('../../../src/server/api/labels/index.get');
+		const handler = await importRoute('~/server/api/labels/index.get');
 		await expect(handler(eventFor(runtime.env))).rejects.toMatchObject({ statusCode: 401 });
 	});
 });

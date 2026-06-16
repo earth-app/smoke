@@ -12,7 +12,7 @@ describe('POST /api/customers', () => {
 	it('creates a customer when caller has ManageTicket', async () => {
 		const runtime = getRuntime();
 		const manager = await seedManager(runtime);
-		const handler = await importRoute('../../../src/server/api/customers/index.post');
+		const handler = await importRoute('~/server/api/customers/index.post');
 
 		mockBody({ name: 'Charlie', email: 'charlie@example.com' });
 		const result = (await handler(eventFor(runtime.env, manager.sessionToken))) as {
@@ -26,7 +26,7 @@ describe('POST /api/customers', () => {
 	it('rejects callers without ManageTicket', async () => {
 		const runtime = getRuntime();
 		const agent = await seedAgent(runtime);
-		const handler = await importRoute('../../../src/server/api/customers/index.post');
+		const handler = await importRoute('~/server/api/customers/index.post');
 
 		mockBody({ name: 'Charlie', email: 'charlie@example.com' });
 		await expect(handler(eventFor(runtime.env, agent.sessionToken))).rejects.toMatchObject({

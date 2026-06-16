@@ -1,0 +1,22 @@
+{
+	"extends": "../.nuxt/tsconfig.server.json",
+	"compilerOptions": {
+		"paths": {
+			"#server-utils": ["./server-utils.ts"],
+			"~/*": ["../src/*"],
+			"@/*": ["../src/*"],
+			"~~/*": ["../*"],
+			"@@/*": ["../*"],
+			"#shared": ["../src/shared"],
+			"#shared/*": ["../src/shared/*"],
+			"#server": ["../src/server"],
+			"#server/*": ["../src/server/*"],
+			"#imports": ["../.nuxt/types/nitro-imports"],
+			"hub:db": ["../node_modules/@nuxthub/db/db"],
+			"hub:db:schema": ["../node_modules/@nuxthub/db/schema.d.mts"],
+			"hub:kv": ["../node_modules/@nuxthub/kv/kv"],
+			"hub:blob": ["../node_modules/@nuxthub/blob/blob"]
+		}
+	},
+	"include": ["**/*.ts", "../.nuxt/types/nitro-imports.d.ts"]
+}

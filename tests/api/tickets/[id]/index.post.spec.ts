@@ -16,7 +16,7 @@ describe('POST /api/tickets/:id', () => {
 		const runtime = getRuntime();
 		const agent = await seedAgent(runtime);
 		const customer = await seedCustomer(runtime, { name: 'Cust', email: 'c@example.com' });
-		const handler = await importRoute('../../../../src/server/api/tickets/[id]/index.post');
+		const handler = await importRoute('~/server/api/tickets/[id]/index.post');
 
 		mockBody({
 			title: 'Another ticket',
@@ -38,7 +38,7 @@ describe('POST /api/tickets/:id', () => {
 			permissions: []
 		});
 		const customer = await seedCustomer(runtime, { name: 'Cust', email: 'c@example.com' });
-		const handler = await importRoute('../../../../src/server/api/tickets/[id]/index.post');
+		const handler = await importRoute('~/server/api/tickets/[id]/index.post');
 
 		mockBody({
 			title: 'Nope',

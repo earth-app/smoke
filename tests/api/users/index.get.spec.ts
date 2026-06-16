@@ -5,7 +5,7 @@ describe('GET /api/users', () => {
 	it('lists every user encrypted through CollegeDB and returns them via the route', async () => {
 		const runtime = getRuntime();
 		await seedManager(runtime);
-		const handler = await importRoute('../../../src/server/api/users/index.get');
+		const handler = await importRoute('~/server/api/users/index.get');
 
 		mockQuery({});
 
@@ -17,7 +17,7 @@ describe('GET /api/users', () => {
 		const runtime = getRuntime();
 		await seedManager(runtime, 'alpha', 'alpha@example.com');
 		await seedManager(runtime, 'bravo', 'bravo@example.com');
-		const handler = await importRoute('../../../src/server/api/users/index.get');
+		const handler = await importRoute('~/server/api/users/index.get');
 
 		mockQuery({ page: '1', limit: '1', sort: 'username', sort_direction: 'asc' });
 		const page1 = (await handler(eventFor(runtime.env))) as Array<{ username: string }>;

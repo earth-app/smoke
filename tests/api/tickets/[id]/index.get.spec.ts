@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TicketPriority, TicketStatus } from '../../../../src/shared/types/ticket';
+import { TicketPriority, TicketStatus } from '~/shared/types/ticket';
 import {
 	eventFor,
 	getRuntime,
@@ -21,7 +21,7 @@ describe('GET /api/tickets/:id', () => {
 			status: TicketStatus.Open,
 			priority: TicketPriority.High
 		});
-		const handler = await importRoute('../../../../src/server/api/tickets/[id]/index.get');
+		const handler = await importRoute('~/server/api/tickets/[id]/index.get');
 
 		mockParams({ id: ticket.id });
 		await expect(handler(eventFor(runtime.env))).resolves.toMatchObject({
@@ -41,7 +41,7 @@ describe('GET /api/tickets/:id', () => {
 			priority: TicketPriority.High,
 			private: true
 		});
-		const handler = await importRoute('../../../../src/server/api/tickets/[id]/index.get');
+		const handler = await importRoute('~/server/api/tickets/[id]/index.get');
 
 		mockParams({ id: ticket.id });
 		await expect(handler(eventFor(runtime.env))).rejects.toMatchObject({ statusCode: 404 });
@@ -59,7 +59,7 @@ describe('GET /api/tickets/:id', () => {
 			priority: TicketPriority.High,
 			private: true
 		});
-		const handler = await importRoute('../../../../src/server/api/tickets/[id]/index.get');
+		const handler = await importRoute('~/server/api/tickets/[id]/index.get');
 
 		mockParams({ id: ticket.id });
 		await expect(handler(eventFor(runtime.env, manager.sessionToken))).resolves.toMatchObject({

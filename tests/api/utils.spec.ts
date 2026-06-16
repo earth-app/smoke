@@ -15,7 +15,7 @@ import {
 describe('server/utils dispatch behaviors', () => {
 	it('caches and rejects oversized search queries', async () => {
 		const runtime = getRuntime();
-		const handler = await importRoute('../../src/server/api/users/index.get');
+		const handler = await importRoute('~/server/api/users/index.get');
 
 		mockQuery({ search: 'x'.repeat(121) });
 		await expect(handler(eventFor(runtime.env))).rejects.toMatchObject({ statusCode: 400 });
@@ -23,7 +23,7 @@ describe('server/utils dispatch behaviors', () => {
 
 	it('rejects invalid sort/page/limit/sort_direction query params', async () => {
 		const runtime = getRuntime();
-		const handler = await importRoute('../../src/server/api/users/index.get');
+		const handler = await importRoute('~/server/api/users/index.get');
 
 		mockQuery({ sort: 'unsupported' });
 		await expect(handler(eventFor(runtime.env))).rejects.toMatchObject({ statusCode: 400 });
@@ -41,7 +41,7 @@ describe('server/utils dispatch behaviors', () => {
 	it('resolves users by @username and "current" alias', async () => {
 		const runtime = getRuntime();
 		const agent = await seedAgent(runtime);
-		const handler = await importRoute('../../src/server/api/users/[id]/index.get');
+		const handler = await importRoute('~/server/api/users/[id]/index.get');
 
 		mockParams({ id: '@agent_user' });
 		await expect(handler(eventFor(runtime.env))).resolves.toMatchObject({
@@ -55,7 +55,7 @@ describe('server/utils dispatch behaviors', () => {
 	});
 
 	it('hashes and verifies passwords with argon2id and scrypt', async () => {
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		const argon = await utils.hashPassword('AnotherStrong123!', 'argon2id');
 		expect(
 			await utils.verifyPassword(
@@ -86,7 +86,7 @@ describe('server/utils dispatch behaviors', () => {
 	}, 30000);
 
 	it('rejects short passwords and bcrypt overlong inputs', async () => {
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		await expect(utils.hashPassword('short')).rejects.toThrow(/12 characters/);
 		await expect(utils.hashPassword('a'.repeat(80) + 'A1!', 'bcrypt')).rejects.toThrow(
 			/bcrypt maximum length/
@@ -95,7 +95,7 @@ describe('server/utils dispatch behaviors', () => {
 
 	it('returns 401 when login is called with a username that does not exist', async () => {
 		const runtime = getRuntime();
-		const handler = await importRoute('../../src/server/api/users/login.post');
+		const handler = await importRoute('~/server/api/users/login.post');
 
 		mockBody({ usernameOrEmail: 'ghost_user', password: 'StrongPass123!' });
 		await expect(handler(eventFor(runtime.env))).rejects.toMatchObject({ statusCode: 401 });
@@ -103,7 +103,7 @@ describe('server/utils dispatch behaviors', () => {
 
 	it('listTicketMessages returns 403 when caller cannot view private ticket', async () => {
 		const runtime = getRuntime();
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		const agent = await seedAgent(runtime);
 		// seed a private ticket that the agent is NOT assigned to
 		const seeded = (await import('./route-runtime')).seedTicket;
@@ -126,7 +126,7 @@ describe('server/utils dispatch behaviors', () => {
 
 	it('setInitialPassword refuses to overwrite an existing password', async () => {
 		const runtime = getRuntime();
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		const agent = await seedAgent(runtime);
 		await utils.setInitialPassword(agent.id, 'StrongPass123!');
 		await expect(utils.setInitialPassword(agent.id, 'AnotherStrong99!')).rejects.toMatchObject({
@@ -136,7 +136,7 @@ describe('server/utils dispatch behaviors', () => {
 
 	it('setInitialPassword 404s when the user does not exist', async () => {
 		const runtime = getRuntime();
-		const utils = await import('~/server/utils');
+		const utils = await import('#server-utils');
 		await expect(utils.setInitialPassword('0'.repeat(32), 'StrongPass123!')).rejects.toMatchObject({
 			statusCode: 404
 		});

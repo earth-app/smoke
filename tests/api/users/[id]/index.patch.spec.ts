@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Permission } from '../../../../src/shared/types/user';
+import { Permission } from '~/shared/types/user';
 import {
 	eventFor,
 	getRuntime,
@@ -15,7 +15,7 @@ describe('PATCH /api/users/:id', () => {
 		const runtime = getRuntime();
 		const manager = await seedManager(runtime);
 		const target = await seedAgent(runtime);
-		const handler = await importRoute('../../../../src/server/api/users/[id]/index.patch');
+		const handler = await importRoute('~/server/api/users/[id]/index.patch');
 
 		mockParams({ id: target.id });
 		mockBody({ username: 'agent_renamed', permissions: [Permission.ManageUsers] });
@@ -38,7 +38,7 @@ describe('PATCH /api/users/:id', () => {
 		const runtime = getRuntime();
 		const callerAgent = await seedAgent(runtime, 'caller_agent', 'caller@example.com');
 		const target = await seedAgent(runtime, 'other_agent', 'other@example.com');
-		const handler = await importRoute('../../../../src/server/api/users/[id]/index.patch');
+		const handler = await importRoute('~/server/api/users/[id]/index.patch');
 
 		mockParams({ id: target.id });
 		mockBody({ username: 'should_not_apply' });
@@ -51,7 +51,7 @@ describe('PATCH /api/users/:id', () => {
 	it('throws 404 when target user does not exist', async () => {
 		const runtime = getRuntime();
 		const manager = await seedManager(runtime);
-		const handler = await importRoute('../../../../src/server/api/users/[id]/index.patch');
+		const handler = await importRoute('~/server/api/users/[id]/index.patch');
 
 		mockParams({ id: '0'.repeat(32) });
 		mockBody({ username: 'whoever' });

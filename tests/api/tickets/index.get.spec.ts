@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TicketPriority, TicketStatus } from '../../../src/shared/types/ticket';
+import { TicketPriority, TicketStatus } from '~/shared/types/ticket';
 import {
 	eventFor,
 	getRuntime,
@@ -34,7 +34,7 @@ describe('GET /api/tickets', () => {
 			priority: TicketPriority.Low,
 			private: true
 		});
-		const handler = await importRoute('../../../src/server/api/tickets/index.get');
+		const handler = await importRoute('~/server/api/tickets/index.get');
 
 		mockQuery({});
 		const result = (await handler(eventFor(runtime.env))) as Array<{ title: string }>;
@@ -57,7 +57,7 @@ describe('GET /api/tickets', () => {
 			assignee_ids: [agent.id],
 			private: true
 		});
-		const handler = await importRoute('../../../src/server/api/tickets/index.get');
+		const handler = await importRoute('~/server/api/tickets/index.get');
 
 		mockQuery({});
 		const result = (await handler(eventFor(runtime.env, agent.sessionToken))) as Array<{
@@ -90,7 +90,7 @@ describe('GET /api/tickets', () => {
 			private: true,
 			assignee_ids: [manager.id]
 		});
-		const handler = await importRoute('../../../src/server/api/tickets/index.get');
+		const handler = await importRoute('~/server/api/tickets/index.get');
 
 		mockQuery({});
 		const result = (await handler(eventFor(runtime.env, manager.sessionToken))) as Array<{

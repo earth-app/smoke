@@ -15,7 +15,7 @@ describe('PATCH /api/labels/:id', () => {
 		const runtime = getRuntime();
 		const manager = await seedManager(runtime);
 		const label = await seedLabel(runtime, 'vip');
-		const handler = await importRoute('../../../../src/server/api/labels/[id]/index.patch');
+		const handler = await importRoute('~/server/api/labels/[id]/index.patch');
 
 		mockParams({ id: label.id });
 		mockBody({ name: 'vip-updated', color: '#445566' });
@@ -29,7 +29,7 @@ describe('PATCH /api/labels/:id', () => {
 		const runtime = getRuntime();
 		const agent = await seedAgent(runtime);
 		const label = await seedLabel(runtime, 'vip');
-		const handler = await importRoute('../../../../src/server/api/labels/[id]/index.patch');
+		const handler = await importRoute('~/server/api/labels/[id]/index.patch');
 
 		mockParams({ id: label.id });
 		mockBody({ name: 'vip-updated' });
@@ -41,7 +41,7 @@ describe('PATCH /api/labels/:id', () => {
 	it('throws 404 when label does not exist', async () => {
 		const runtime = getRuntime();
 		const manager = await seedManager(runtime);
-		const handler = await importRoute('../../../../src/server/api/labels/[id]/index.patch');
+		const handler = await importRoute('~/server/api/labels/[id]/index.patch');
 
 		mockParams({ id: 9999 });
 		mockBody({ name: 'whatever' });

@@ -12,7 +12,7 @@ describe('POST /api/labels', () => {
 	it('creates a label when caller has ManageLabels', async () => {
 		const runtime = getRuntime();
 		const manager = await seedManager(runtime);
-		const handler = await importRoute('../../../src/server/api/labels/index.post');
+		const handler = await importRoute('~/server/api/labels/index.post');
 
 		mockBody({ name: 'vip', color: '#112233' });
 		await expect(handler(eventFor(runtime.env, manager.sessionToken))).resolves.toMatchObject({
@@ -24,7 +24,7 @@ describe('POST /api/labels', () => {
 	it('rejects callers without ManageLabels', async () => {
 		const runtime = getRuntime();
 		const agent = await seedAgent(runtime);
-		const handler = await importRoute('../../../src/server/api/labels/index.post');
+		const handler = await importRoute('~/server/api/labels/index.post');
 
 		mockBody({ name: 'vip' });
 		await expect(handler(eventFor(runtime.env, agent.sessionToken))).rejects.toMatchObject({

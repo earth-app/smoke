@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Permission } from '../../../src/shared/types/user';
+import { Permission } from '~/shared/types/user';
 import {
 	eventFor,
 	getRuntime,
@@ -19,7 +19,7 @@ describe('POST /api/tickets', () => {
 			name: 'Cust',
 			email: 'cust@example.com'
 		});
-		const handler = await importRoute('../../../src/server/api/tickets/index.post');
+		const handler = await importRoute('~/server/api/tickets/index.post');
 
 		mockBody({
 			title: 'Broken thing',
@@ -45,7 +45,7 @@ describe('POST /api/tickets', () => {
 			name: 'Cust',
 			email: 'cust@example.com'
 		});
-		const handler = await importRoute('../../../src/server/api/tickets/index.post');
+		const handler = await importRoute('~/server/api/tickets/index.post');
 
 		mockBody({
 			title: 'Nope',
@@ -64,7 +64,7 @@ describe('POST /api/tickets', () => {
 			name: 'Cust',
 			email: 'cust@example.com'
 		});
-		const handler = await importRoute('../../../src/server/api/tickets/index.post');
+		const handler = await importRoute('~/server/api/tickets/index.post');
 
 		mockBody({
 			title: 'Locked',
@@ -84,7 +84,7 @@ describe('POST /api/tickets', () => {
 			name: 'Cust',
 			email: 'cust@example.com'
 		});
-		const handler = await importRoute('../../../src/server/api/tickets/index.post');
+		const handler = await importRoute('~/server/api/tickets/index.post');
 
 		mockBody({
 			title: 'Locked',

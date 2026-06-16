@@ -8,7 +8,7 @@ import {
 	seedManager
 } from '../../route-runtime';
 
-const ROUTE = '../../../../src/server/api/users/[id]/avatar.delete';
+const ROUTE = '~/server/api/users/[id]/avatar.delete';
 
 async function setAvatarUrl(
 	env: typeof import('../../route-runtime').TEST_ENV,

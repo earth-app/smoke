@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TicketPriority, TicketStatus } from '../../../../../src/shared/types/ticket';
+import { TicketPriority, TicketStatus } from '~/shared/types/ticket';
 import {
 	eventFor,
 	getRuntime,
@@ -26,9 +26,7 @@ describe('POST /api/tickets/:id/messages', () => {
 			assignee_ids: [agent.id]
 		});
 
-		const handler = await importRoute(
-			'../../../../../src/server/api/tickets/[id]/messages/index.post'
-		);
+		const handler = await importRoute('~/server/api/tickets/[id]/messages/index.post');
 		mockParams({ id: ticket.id });
 		mockBody({
 			message: 'First reply',
@@ -60,9 +58,7 @@ describe('POST /api/tickets/:id/messages', () => {
 			priority: TicketPriority.High
 		});
 
-		const handler = await importRoute(
-			'../../../../../src/server/api/tickets/[id]/messages/index.post'
-		);
+		const handler = await importRoute('~/server/api/tickets/[id]/messages/index.post');
 		mockParams({ id: ticket.id });
 		mockBody({ message: 'denied' });
 
@@ -74,9 +70,7 @@ describe('POST /api/tickets/:id/messages', () => {
 	it('throws 404 when ticket does not exist', async () => {
 		const runtime = getRuntime();
 		const agent = await seedAgent(runtime);
-		const handler = await importRoute(
-			'../../../../../src/server/api/tickets/[id]/messages/index.post'
-		);
+		const handler = await importRoute('~/server/api/tickets/[id]/messages/index.post');
 		mockParams({ id: 9999 });
 		mockBody({ message: 'lost' });
 

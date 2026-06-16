@@ -15,7 +15,7 @@ describe('GET /api/customers', () => {
 		const manager = await seedManager(runtime);
 		await seedCustomer(runtime, { name: 'Alice', email: 'alice@example.com' });
 		await seedCustomer(runtime, { name: 'Bob', email: 'bob@example.com' });
-		const handler = await importRoute('../../../src/server/api/customers/index.get');
+		const handler = await importRoute('~/server/api/customers/index.get');
 
 		mockQuery({});
 		const result = (await handler(eventFor(runtime.env, manager.sessionToken))) as Array<{
@@ -27,7 +27,7 @@ describe('GET /api/customers', () => {
 	it('rejects callers without ManageTicket', async () => {
 		const runtime = getRuntime();
 		const agent = await seedAgent(runtime);
-		const handler = await importRoute('../../../src/server/api/customers/index.get');
+		const handler = await importRoute('~/server/api/customers/index.get');
 
 		await expect(handler(eventFor(runtime.env, agent.sessionToken))).rejects.toMatchObject({
 			statusCode: 403
@@ -39,7 +39,7 @@ describe('GET /api/customers', () => {
 		const manager = await seedManager(runtime);
 		await seedCustomer(runtime, { name: 'Alice', email: 'alice@example.com' });
 		await seedCustomer(runtime, { name: 'Bob', email: 'bob@example.com' });
-		const handler = await importRoute('../../../src/server/api/customers/index.get');
+		const handler = await importRoute('~/server/api/customers/index.get');
 
 		mockQuery({ search: 'alice' });
 		const result = (await handler(eventFor(runtime.env, manager.sessionToken))) as Array<{
