@@ -6,9 +6,10 @@
   "scripts": {
     "dev": "bunx nuxi dev --no-restart --public --port 4000",
     "build": "nuxt build",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
+    "test": "bunx vitest run",
+    "test:watch": "bunx vitest",
+    "test:report": "bunx vitest run --reporter=junit --outputFile=test-report.junit.xml",
+    "test:coverage": "bunx vitest run --coverage",
     "postinstall": "nuxt prepare",
     "prettier": "bunx prettier --write .",
     "prettier:check": "bunx prettier --check .",

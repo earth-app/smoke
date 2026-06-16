@@ -13,6 +13,14 @@ comment:
   layout: 'condensed_header, condensed_files, condensed_footer'
   require_changes: true
 
+flag_management:
+  default_rules:
+    carryforward: true
+  individual_flags:
+    - name: coverage
+      paths:
+        - src/
+
 ignore:
   - 'tests/**/*'
   - 'coverage/**/*'

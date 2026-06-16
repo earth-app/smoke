@@ -28,10 +28,8 @@ export default defineConfig({
 		include: ['tests/**/*.spec.ts', 'tests/**/*.test.ts'],
 		setupFiles: ['tests/setup.ts'],
 		coverage: {
-			// The Cloudflare Workers vitest pool runs tests in real Workers isolates,
-			// where v8 native coverage isn't available; Istanbul instrumentation works.
 			provider: 'istanbul' as const,
-			reporter: ['text', 'lcov'],
+			reporter: ['text', 'lcov', 'clover'],
 			include: ['src/server/**', 'src/plugins/**'],
 			exclude: ['**/node_modules/**', 'tests/**']
 		}

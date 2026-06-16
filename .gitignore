@@ -24,3 +24,4 @@ logs
 
 # Testing
 coverage/
+test-report.junit.xml
