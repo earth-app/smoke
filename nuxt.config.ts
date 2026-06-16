@@ -42,6 +42,7 @@ export default defineNuxtConfig({
 		}
 	},
 	hub: {
+		blob: true,
 		cache: true,
 		kv: true,
 		db: 'sqlite'

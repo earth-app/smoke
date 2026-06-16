@@ -29,6 +29,11 @@
 		"enabled": true,
 		"head_sampling_rate": 1.0
 	},
+	"r2_buckets": [
+		{
+			"binding": "BLOB"
+		}
+	],
 	"send_email": [
 		{
 			"name": "EMAIL"
