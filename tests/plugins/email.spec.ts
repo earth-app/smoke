@@ -1,5 +1,11 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { send as edgeportSend } from 'edgeport/smtp';
+import { describe, expect, it, vi } from 'vitest';
 import { getRuntime } from '../api/route-runtime';
+
+// edgeport opens real TCP sockets; mock it so the outbound path is observable without a network
+vi.mock('edgeport/smtp', () => ({
+	send: vi.fn(async () => ({ accepted: [], response: '250 OK' }))
+}));
 
 type EmailHandler = (payload: { message: any; env: any; context: unknown }) => Promise<void>;
 
@@ -17,37 +23,6 @@ async function loadEmailHandler(): Promise<EmailHandler> {
 	} as any);
 	if (!handler) throw new Error('cloudflare:email hook was not registered');
 	return handler;
-}
-
-function jsonResponse(body: unknown): Response {
-	return new Response(JSON.stringify(body), {
-		status: 200,
-		headers: { 'content-type': 'application/json' }
-	});
-}
-
-// stub the cloudflare destination-address api the engine calls via global fetch
-function stubCloudflare(options: { totalCount?: number; verified?: boolean } = {}) {
-	const verifiedAt = options.verified ? '2026-01-01T00:00:00Z' : null;
-	const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
-		const method = init?.method ?? 'GET';
-		if (method === 'POST') {
-			return jsonResponse({ success: true, result: { id: 'addr-1', verified: verifiedAt } });
-		}
-		if (method === 'DELETE') {
-			return jsonResponse({ success: true, result: null });
-		}
-		if (String(url).includes('per_page')) {
-			return jsonResponse({
-				success: true,
-				result: [],
-				result_info: { total_count: options.totalCount ?? 0 }
-			});
-		}
-		return jsonResponse({ success: true, result: { id: 'addr-1', verified: verifiedAt } });
-	});
-	vi.stubGlobal('fetch', fetchMock);
-	return fetchMock;
 }
 
 type BuildMessageOptions = {
@@ -92,14 +67,9 @@ function buildMessage(options: BuildMessageOptions) {
 	};
 }
 
-afterEach(() => {
-	vi.unstubAllGlobals();
-});
-
 describe('cloudflare:email plugin', () => {
-	it('creates a customer + ticket, provisions an address, and auto-acks an unknown sender', async () => {
+	it('creates a customer + ticket and auto-acks an unknown sender', async () => {
 		const runtime = getRuntime();
-		const fetchMock = stubCloudflare({ totalCount: 0 });
 		const handler = await loadEmailHandler();
 
 		const message = buildMessage({
@@ -121,14 +91,11 @@ describe('cloudflare:email plugin', () => {
 		expect(tickets[0]?.description).toBe('Please help me with account setup.');
 		expect(tickets[0]?.customer_id).toBe(customer!.id);
 
-		// one synchronous reply, and a destination address was provisioned
 		expect(message.reply).toHaveBeenCalledTimes(1);
-		expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(true);
 	});
 
 	it('reuses an existing customer instead of creating a duplicate', async () => {
 		const runtime = getRuntime();
-		stubCloudflare({ totalCount: 0 });
 		const utils = await import('#server-utils');
 		const existing = await utils.createCustomer(
 			{ name: 'Existing', email: 'existing@example.com' },
@@ -153,7 +120,6 @@ describe('cloudflare:email plugin', () => {
 
 	it('threads a reply into the existing ticket via the reply alias', async () => {
 		const runtime = getRuntime();
-		stubCloudflare({ totalCount: 0 });
 		const handler = await loadEmailHandler();
 		const utils = await import('#server-utils');
 
@@ -190,7 +156,6 @@ describe('cloudflare:email plugin', () => {
 
 	it('threads a reply via In-Reply-To when the alias is absent', async () => {
 		const runtime = getRuntime();
-		stubCloudflare({ totalCount: 0 });
 		const handler = await loadEmailHandler();
 		const utils = await import('#server-utils');
 
@@ -224,107 +189,27 @@ describe('cloudflare:email plugin', () => {
 		expect(thread.messages[0]?.message).toBe('follow-up over email');
 	});
 
-	it('disables the thread and skips provisioning when the account is at capacity', async () => {
-		const runtime = getRuntime();
-		const fetchMock = stubCloudflare({ totalCount: 200 });
-		const handler = await loadEmailHandler();
-		const utils = await import('#server-utils');
-
-		const message = buildMessage({
-			from: 'full@example.com',
-			subject: 'Help',
-			body: 'at capacity'
-		});
-		await handler({ message, env: runtime.env, context: {} });
-
-		const tickets = await utils.listTickets(runtime.env, '', 1, 10, 0, 'id', 'asc', null);
-		expect(tickets).toHaveLength(1);
-		expect(message.reply).toHaveBeenCalledTimes(1);
-
-		// no destination address is created when over the limit
-		expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false);
-		// the thread is permanently flagged as email-disabled
-		expect(await runtime.hubKv.get('smoke:email_disabled:1')).toBe('1');
-	});
-
 	it('replies with a not-configured notice and creates nothing when secrets are missing', async () => {
 		const runtime = getRuntime();
-		const fetchMock = stubCloudflare({ totalCount: 0 });
 		const handler = await loadEmailHandler();
 		const utils = await import('#server-utils');
 
 		const message = buildMessage({ from: 'someone@example.com', subject: 'Hello', body: 'hi' });
 		await handler({
 			message,
-			env: { ...runtime.env, CF_API_TOKEN: '' },
+			env: { ...runtime.env, CF_EMAIL_TOKEN: '' },
 			context: {}
 		});
 
 		expect(message.reply).toHaveBeenCalledTimes(1);
-		expect(fetchMock).not.toHaveBeenCalled();
 
 		const tickets = await utils.listTickets(runtime.env, '', 1, 10, 0, 'id', 'asc', null);
 		expect(tickets).toHaveLength(0);
 		expect(await utils.getCustomerByEmail('someone@example.com', runtime.env)).toBeNull();
 	});
 
-	it('sends a threaded agent reply over email when the customer is verified', async () => {
-		const runtime = getRuntime();
-		stubCloudflare({ verified: true });
-		const utils = await import('#server-utils');
-
-		const email = 'verified@example.com';
-		const customer = await utils.createCustomer({ name: 'Verified', email }, runtime.env);
-		const ticket = await utils.createTicket(
-			{ title: 'Login issue', description: 'cannot log in', customer_id: customer.id },
-			runtime.env
-		);
-		await utils.initEmailThread(ticket.id, 'Login issue', email);
-
-		// mark the customer's destination address as already verified
-		const hash = await utils.hmacSha256(runtime.env.HMAC_SECRET, email);
-		await runtime.hubKv.set(
-			`smoke:email_addr:${hash}`,
-			JSON.stringify({ id: 'addr-1', verified: true })
-		);
-
-		const sent = await utils.sendTicketEmailReply(
-			ticket.id,
-			'can you send a screenshot?',
-			runtime.env
-		);
-		expect(sent).toBe(true);
-		expect(runtime.env.EMAIL.send).toHaveBeenCalledTimes(1);
-
-		const thread = await runtime.hubKv.get<{ last_message_id?: string; references: string[] }>(
-			`smoke:email_thread:${ticket.id}`,
-			'json'
-		);
-		expect(thread?.last_message_id).toBeTruthy();
-		expect(thread?.references.length).toBeGreaterThan(0);
-	});
-
-	it('does not send an agent reply over email when the customer is unverified', async () => {
-		const runtime = getRuntime();
-		stubCloudflare({ verified: false });
-		const utils = await import('#server-utils');
-
-		const email = 'unverified@example.com';
-		const customer = await utils.createCustomer({ name: 'Unverified', email }, runtime.env);
-		const ticket = await utils.createTicket(
-			{ title: 'Question', description: 'how do i', customer_id: customer.id },
-			runtime.env
-		);
-		await utils.initEmailThread(ticket.id, 'Question', email);
-
-		const sent = await utils.sendTicketEmailReply(ticket.id, 'here is the answer', runtime.env);
-		expect(sent).toBe(false);
-		expect(runtime.env.EMAIL.send).not.toHaveBeenCalled();
-	});
-
 	it('rejects an inbound message without a parseable sender', async () => {
 		const runtime = getRuntime();
-		stubCloudflare({ totalCount: 0 });
 		const handler = await loadEmailHandler();
 		const utils = await import('#server-utils');
 
@@ -335,5 +220,114 @@ describe('cloudflare:email plugin', () => {
 		expect(message.setReject).toHaveBeenCalledTimes(1);
 		const tickets = await utils.listTickets(runtime.env, '', 1, 10, 0, 'id', 'asc', null);
 		expect(tickets).toHaveLength(0);
+	});
+});
+
+describe('sendTicketEmailReply (Email Service via edgeport)', () => {
+	it('sends a threaded reply to any customer over edgeport SMTP', async () => {
+		const runtime = getRuntime();
+		const utils = await import('#server-utils');
+
+		const email = 'anyone@example.com';
+		const customer = await utils.createCustomer({ name: 'Anyone', email }, runtime.env);
+		const ticket = await utils.createTicket(
+			{ title: 'Login issue', description: 'cannot log in', customer_id: customer.id },
+			runtime.env
+		);
+		await utils.initEmailThread(ticket.id, 'Login issue', email);
+		await utils.recordInboundOnThread(ticket.id, {
+			from: email,
+			to: '',
+			subject: 'Login issue',
+			messageId: '<cust-1@example.com>',
+			references: [],
+			text: 'cannot log in'
+		});
+
+		const sent = await utils.sendTicketEmailReply(
+			ticket.id,
+			'can you send a screenshot?',
+			runtime.env
+		);
+		expect(sent).toBe(true);
+
+		const sendMock = edgeportSend as unknown as ReturnType<typeof vi.fn>;
+		expect(sendMock).toHaveBeenCalledTimes(1);
+		const call = sendMock.mock.calls[0]![0];
+		expect(call.hostname).toBe('smtp.mx.cloudflare.net');
+		expect(call.tls).toBe('implicit');
+		expect(call.auth.username).toBe('api_token');
+		expect(call.auth.password).toBe('cf-email-token');
+		expect(call.to).toBe(email);
+		expect(call.text).toBe('can you send a screenshot?');
+		// clean onboarded From, alias Reply-To, threaded against the customer's last message
+		expect(call.from).toContain('support@smoke.example.com');
+		expect(call.headers['Reply-To']).toBe('support+t' + ticket.id + '@smoke.example.com');
+		expect(call.headers['In-Reply-To']).toBe('<cust-1@example.com>');
+	});
+
+	it('forwards attachments on an agent reply over edgeport SMTP', async () => {
+		const runtime = getRuntime();
+		const utils = await import('#server-utils');
+		const sendMock = edgeportSend as unknown as ReturnType<typeof vi.fn>;
+		sendMock.mockClear();
+
+		const email = 'attach@example.com';
+		const customer = await utils.createCustomer({ name: 'Attach', email }, runtime.env);
+		const ticket = await utils.createTicket(
+			{ title: 'With file', description: 'see attached', customer_id: customer.id },
+			runtime.env
+		);
+		await utils.initEmailThread(ticket.id, 'With file', email);
+
+		const sent = await utils.sendTicketEmailReply(ticket.id, 'here you go', runtime.env, [
+			{ file_name: 'note.txt', mimetype: 'text/plain', data: btoa('hello world') }
+		]);
+		expect(sent).toBe(true);
+
+		const call = sendMock.mock.calls[0]![0];
+		expect(call.attachments).toHaveLength(1);
+		expect(call.attachments[0].filename).toBe('note.txt');
+		expect(call.attachments[0].contentType).toBe('text/plain');
+		expect(new TextDecoder().decode(call.attachments[0].content)).toBe('hello world');
+	});
+
+	it('does not send for a ticket that is not email-linked', async () => {
+		const runtime = getRuntime();
+		const utils = await import('#server-utils');
+		const sendMock = edgeportSend as unknown as ReturnType<typeof vi.fn>;
+		sendMock.mockClear();
+
+		const customer = await utils.createCustomer(
+			{ name: 'No Email', email: 'no@example.com' },
+			runtime.env
+		);
+		const ticket = await utils.createTicket(
+			{ title: 'UI ticket', description: 'opened in ui', customer_id: customer.id },
+			runtime.env
+		);
+
+		const sent = await utils.sendTicketEmailReply(ticket.id, 'reply', runtime.env);
+		expect(sent).toBe(false);
+		expect(sendMock).not.toHaveBeenCalled();
+	});
+
+	it('does not send for a private ticket', async () => {
+		const runtime = getRuntime();
+		const utils = await import('#server-utils');
+		const sendMock = edgeportSend as unknown as ReturnType<typeof vi.fn>;
+		sendMock.mockClear();
+
+		const email = 'priv@example.com';
+		const customer = await utils.createCustomer({ name: 'Priv', email }, runtime.env);
+		const ticket = await utils.createTicket(
+			{ title: 'Private', description: 'secret', customer_id: customer.id, private: true },
+			runtime.env
+		);
+		await utils.initEmailThread(ticket.id, 'Private', email);
+
+		const sent = await utils.sendTicketEmailReply(ticket.id, 'internal note', runtime.env);
+		expect(sent).toBe(false);
+		expect(sendMock).not.toHaveBeenCalled();
 	});
 });

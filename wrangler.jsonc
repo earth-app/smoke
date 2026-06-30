@@ -35,10 +35,5 @@
 		{
 			"binding": "BLOB"
 		}
-	],
-	"send_email": [
-		{
-			"name": "EMAIL"
-		}
 	]
 }

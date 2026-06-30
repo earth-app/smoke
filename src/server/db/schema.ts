@@ -161,7 +161,9 @@ function toShardProvider(binding: unknown): SQLDatabase | null {
 	}
 
 	if (typeof candidate?.prepare === 'function') {
-		return createSQLiteProvider(binding as AnyD1Database);
+		// d1 is the sqlite provider's intended input at runtime; its workers-types signature is
+		// narrower than collegedb's SQLiteClientLike, so cast through unknown
+		return createSQLiteProvider(binding as unknown as Parameters<typeof createSQLiteProvider>[0]);
 	}
 
 	try {

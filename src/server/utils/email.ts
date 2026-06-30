@@ -1,4 +1,4 @@
-import { allAllShardsGlobal, first } from '@earth-app/collegedb';
+import { first } from '@earth-app/collegedb';
 import { EmailMessage } from 'cloudflare:email';
 import { DBTicket } from 'hub:db:schema';
 import { createMimeMessage } from 'mimetext';
@@ -6,36 +6,19 @@ import PostalMime from 'postal-mime';
 
 // #region types + constants
 
-const VERIFIED_ADDRESS_LIMIT = 200;
+// cloudflare email service smtp submission endpoint (sends to any recipient, no verified-dest cap)
+const EMAIL_SERVICE_HOST = 'smtp.mx.cloudflare.net';
 
 // env vars the email engine needs before it will accept/answer inbound mail
-const REQUIRED_ENV = [
-	'MASTER_KEY',
-	'HMAC_SECRET',
-	'CF_API_TOKEN',
-	'CF_ACCOUNT_ID',
-	'SUPPORT_EMAIL'
-];
-
-// ticket statuses that free a customer's verified-address slot
-const CLOSED_STATUSES = ['closed', 'wont_fix'];
+const REQUIRED_ENV = ['MASTER_KEY', 'HMAC_SECRET', 'CF_EMAIL_TOKEN', 'SUPPORT_EMAIL'];
 
 const MSGID_INDEX_TTL = 60 * 60 * 24 * 90;
-const ADDRESS_COUNT_CACHE_KEY = 'smoke:email_addr_count';
-const REAP_THROTTLE_KEY = 'smoke:email_reap_at';
-const REAP_INTERVAL_SECONDS = 60 * 60;
-const REAP_UNVERIFIED_MAX_AGE_MS = 60 * 60 * 72 * 1000;
 
 type EmailThread = {
 	subject: string;
 	customer_email: string;
 	last_message_id?: string;
 	references: string[];
-};
-
-type AddressRecord = {
-	id: string;
-	verified: boolean;
 };
 
 export type ParsedInboundEmail = {
@@ -76,8 +59,6 @@ function supportDomain(env: any): string {
 
 const msgidKey = (hash: string) => `smoke:email_msgid:${hash}`;
 const threadKey = (ticketId: number) => `smoke:email_thread:${ticketId}`;
-const disabledKey = (ticketId: number) => `smoke:email_disabled:${ticketId}`;
-const addressKey = (emailHash: string) => `smoke:email_addr:${emailHash}`;
 
 function normalizeMessageId(messageId: string): string {
 	return messageId.trim().replace(/^<|>$/g, '').toLowerCase();
@@ -86,11 +67,6 @@ function normalizeMessageId(messageId: string): string {
 async function sha256Hex(input: string): Promise<string> {
 	const digest = await crypto.subtle.digest('SHA-256', textEncoder.encode(input));
 	return bytesToHex(new Uint8Array(digest));
-}
-
-async function emailHash(email: string, env: any): Promise<string> {
-	// reuse the hmac-email-lookup convention so no plaintext email lands in a kv key
-	return await hmacSha256(env.HMAC_SECRET, email.trim().toLowerCase());
 }
 
 // #endregion
@@ -239,152 +215,6 @@ function capReferences(references: string[]): string[] {
 
 // #endregion
 
-// #region disabled state
-
-async function isThreadDisabled(ticketId: number): Promise<boolean> {
-	return (await kv.get<string>(disabledKey(ticketId))) === '1';
-}
-
-async function disableThread(ticketId: number): Promise<void> {
-	await kv.set(disabledKey(ticketId), '1');
-}
-
-export async function forgetTicketEmailState(ticketId: number): Promise<void> {
-	await kv.del(threadKey(ticketId));
-	await kv.del(disabledKey(ticketId));
-}
-
-// #endregion
-
-// #region cloudflare api
-
-async function cfAddressesFetch(env: any, path: string, init?: RequestInit): Promise<any> {
-	const response = await fetch(
-		`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/email/routing/addresses${path}`,
-		{
-			...init,
-			headers: {
-				Authorization: `Bearer ${env.CF_API_TOKEN}`,
-				'Content-Type': 'application/json',
-				...(init?.headers ?? {})
-			}
-		}
-	);
-
-	return await response.json().catch(() => null);
-}
-
-async function countVerifiedAddresses(env: any): Promise<number> {
-	return await cache(
-		ADDRESS_COUNT_CACHE_KEY,
-		async () => {
-			const result = await cfAddressesFetch(env, '?per_page=5');
-			return Number(result?.result_info?.total_count ?? 0);
-		},
-		60
-	);
-}
-
-async function getAddressRecord(email: string, env: any): Promise<AddressRecord | null> {
-	const hash = await emailHash(email, env);
-	return await kv.get<AddressRecord>(addressKey(hash), 'json');
-}
-
-async function setAddressRecord(email: string, env: any, record: AddressRecord): Promise<void> {
-	const hash = await emailHash(email, env);
-	await kv.set(addressKey(hash), JSON.stringify(record));
-}
-
-async function deleteAddressRecord(email: string, env: any): Promise<void> {
-	const hash = await emailHash(email, env);
-	await kv.del(addressKey(hash));
-}
-
-// create a destination address (cloudflare sends the verification email); returns
-// null when the account is at capacity or the api rejects the request
-async function provisionAddress(email: string, env: any): Promise<AddressRecord | null> {
-	const existing = await getAddressRecord(email, env);
-	if (existing) return existing;
-
-	const count = await countVerifiedAddresses(env);
-	if (count >= VERIFIED_ADDRESS_LIMIT) return null;
-
-	const result = await cfAddressesFetch(env, '', {
-		method: 'POST',
-		body: JSON.stringify({ email })
-	});
-	if (!result?.success || !result?.result?.id) return null;
-
-	const record: AddressRecord = { id: result.result.id, verified: result.result.verified != null };
-	await setAddressRecord(email, env, record);
-	await kv.del(ADDRESS_COUNT_CACHE_KEY);
-	return record;
-}
-
-export async function isEmailVerified(email: string, env: any): Promise<boolean> {
-	const record = await getAddressRecord(email, env);
-	if (!record) return false;
-	if (record.verified) return true;
-
-	const result = await cfAddressesFetch(env, `/${record.id}`);
-	const verified = result?.result?.verified != null;
-	if (verified) {
-		await setAddressRecord(email, env, { ...record, verified: true });
-	}
-	return verified;
-}
-
-async function releaseAddress(email: string, env: any): Promise<void> {
-	const record = await getAddressRecord(email, env);
-	if (!record) return;
-
-	await cfAddressesFetch(env, `/${record.id}`, { method: 'DELETE' });
-	await deleteAddressRecord(email, env);
-	await kv.del(ADDRESS_COUNT_CACHE_KEY);
-}
-
-// free a customer's address only when none of their tickets are still open
-export async function releaseEmailAddressIfNoOpenTickets(
-	customerId: number,
-	env: any
-): Promise<void> {
-	if (!isEmailConfigured(env)) return;
-
-	const customer = await getCustomerById(customerId, env);
-	if (!customer) return;
-
-	const rows = await allAllShardsGlobal<Pick<DBTicket, 'id' | 'status'>>(
-		`SELECT id, status FROM tickets WHERE customer_id = ?`,
-		[customerId]
-	);
-	const hasOpen = rows.results.some((row) => !CLOSED_STATUSES.includes(String(row.status)));
-	if (hasOpen) return;
-
-	await releaseAddress(customer.email, env);
-}
-
-// best-effort cleanup of addresses that were created but never verified
-export async function reapStaleUnverified(env: any): Promise<void> {
-	if (!isEmailConfigured(env)) return;
-
-	const last = Number((await kv.get<string>(REAP_THROTTLE_KEY)) ?? 0);
-	const now = Date.now();
-	if (now - last < REAP_INTERVAL_SECONDS * 1000) return;
-	await kv.set(REAP_THROTTLE_KEY, String(now), { ttl: REAP_INTERVAL_SECONDS });
-
-	const result = await cfAddressesFetch(env, '?per_page=50&direction=asc');
-	const addresses: any[] = Array.isArray(result?.result) ? result.result : [];
-	for (const address of addresses) {
-		if (address?.verified != null) continue;
-		const created = address?.created ? Date.parse(address.created) : now;
-		if (now - created < REAP_UNVERIFIED_MAX_AGE_MS) continue;
-		if (address?.id) await cfAddressesFetch(env, `/${address.id}`, { method: 'DELETE' });
-	}
-	await kv.del(ADDRESS_COUNT_CACHE_KEY);
-}
-
-// #endregion
-
 // #region mime + sending
 
 function buildMime(options: {
@@ -425,22 +255,20 @@ function replySubject(subject: string): string {
 const NOT_CONFIGURED_TEXT =
 	'This service is not configured to receive emails. Please create a ticket on our website so our team can help you.';
 
+// the single synchronous reply() allowed per inbound event: acknowledges the new ticket + ui link
 export async function sendAutoAck(
 	message: any,
 	parsed: ParsedInboundEmail,
 	ticketId: number,
 	ticketTitle: string,
-	state: 'active' | 'disabled',
 	env: any
 ): Promise<void> {
 	if (typeof message.reply !== 'function') return;
 
 	const link = `${siteUrl(env)}/tickets/${ticketId}`;
-	const text =
-		state === 'disabled'
-			? `Thanks for reaching out — we've opened ticket #${ticketId}. We're experiencing a high volume right now, so this email thread will not receive updates. Please follow your ticket here: ${link}`
-			: `Thanks for reaching out — we've opened ticket #${ticketId}. You'll shortly receive a separate verification email from Cloudflare; confirm it to keep getting replies here. You can also follow your ticket at ${link}`;
+	const text = `Thanks for reaching out — we've opened ticket #${ticketId}. Our team will reply to this thread shortly; you can also follow it here: ${link}`;
 
+	// from = the per-ticket alias on the received domain (keeps reply() domain-aligned + routes replies back)
 	const from = buildReplyAlias(message.to, ticketId);
 	const raw = buildMime({
 		from,
@@ -469,68 +297,69 @@ export async function replyNotConfigured(message: any): Promise<void> {
 	await message.reply(new EmailMessage(message.to, message.from, raw));
 }
 
-// deliver an agent's reply to the customer over email, threaded into the conversation;
-// no-op for tickets that aren't email-linked, disabled, private, or unverified
+type OutboundAttachment = { file_name: string; mimetype: string; data: string };
+
+function base64ToBytes(data: string): Uint8Array {
+	// tolerate a data: uri prefix; otherwise treat as raw base64
+	const b64 = data.includes(',') ? data.slice(data.indexOf(',') + 1) : data;
+	const binary = atob(b64);
+	const bytes = new Uint8Array(binary.length);
+	for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+	return bytes;
+}
+
+function toEdgeportAttachments(items?: OutboundAttachment[]) {
+	if (!items || items.length === 0) return undefined;
+	return items.map((item) => ({
+		filename: item.file_name,
+		content: base64ToBytes(item.data),
+		contentType: item.mimetype
+	}));
+}
+
+// deliver an agent's reply (with any attachments) to the customer over email via cloudflare email service
 export async function sendTicketEmailReply(
 	ticketId: number,
 	body: string,
-	env: any
+	env: any,
+	attachments?: OutboundAttachment[]
 ): Promise<boolean> {
 	if (!isEmailConfigured(env)) return false;
 
 	const thread = await getThread(ticketId);
 	if (!thread) return false;
-	if (await isThreadDisabled(ticketId)) return false;
 
 	const ticket = await first<DBTicket>(ticketId.toString(), `SELECT * FROM tickets WHERE id = ?`, [
 		ticketId
 	]);
 	if (!ticket || ticket.private === 1) return false;
 
-	const email = thread.customer_email;
-	if (!(await isEmailVerified(email, env))) return false;
+	const alias = buildReplyAlias(env.SUPPORT_EMAIL, ticketId);
+	const subject = replySubject(thread.subject || ticket.title);
 
-	const from = buildReplyAlias(env.SUPPORT_EMAIL, ticketId);
-	const synthetic = syntheticMessageId(ticketId, env);
-	const references = capReferences([
-		...thread.references,
-		...(thread.last_message_id ? [thread.last_message_id] : []),
-		synthetic
-	]);
+	// clean onboarded From + alias Reply-To so customer replies route back to the ticket
+	const headers: Record<string, string> = { 'Reply-To': alias };
+	if (thread.last_message_id) {
+		headers['In-Reply-To'] = thread.last_message_id;
+		headers['References'] = capReferences([...thread.references, thread.last_message_id]).join(' ');
+	} else if (thread.references.length > 0) {
+		headers['References'] = thread.references.join(' ');
+	}
 
-	const raw = buildMime({
-		from,
-		fromName: 'Support',
-		to: email,
-		subject: replySubject(thread.subject || ticket.title),
+	const { send } = await import('edgeport/smtp');
+	await send({
+		hostname: EMAIL_SERVICE_HOST,
+		tls: 'implicit',
+		auth: { username: 'api_token', password: env.CF_EMAIL_TOKEN, mechanism: 'PLAIN' },
+		from: `Support <${env.SUPPORT_EMAIL}>`,
+		to: thread.customer_email,
+		subject,
 		text: body,
-		messageId: synthetic,
-		inReplyTo: thread.last_message_id,
-		references
+		headers,
+		attachments: toEdgeportAttachments(attachments)
 	});
 
-	await env.EMAIL.send(new EmailMessage(from, email, raw));
-
-	thread.references = references;
-	thread.last_message_id = synthetic;
-	await setThread(ticketId, thread);
-	await indexMessageId(synthetic, ticketId);
 	return true;
-}
-
-// provision (or look up) the customer's verified address for a new conversation,
-// degrading the whole thread to disabled when the account is at capacity
-export async function ensureThreadVerification(
-	email: string,
-	ticketId: number,
-	env: any
-): Promise<'active' | 'disabled'> {
-	const record = await provisionAddress(email, env);
-	if (!record) {
-		await disableThread(ticketId);
-		return 'disabled';
-	}
-	return (await isThreadDisabled(ticketId)) ? 'disabled' : 'active';
 }
 
 // #endregion

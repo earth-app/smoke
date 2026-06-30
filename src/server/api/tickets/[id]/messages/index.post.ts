@@ -43,10 +43,13 @@ export default defineEventHandler(async (event) => {
 			event.context.cloudflare.env
 		);
 
-		// mirror the reply to the customer over email when the ticket is an active email thread
-		await sendTicketEmailReply(id, body.message, event.context.cloudflare.env).catch(
-			(error: unknown) => console.warn('Failed to send ticket email reply', error)
-		);
+		// mirror the reply to the customer over email when the ticket is an email thread
+		await sendTicketEmailReply(
+			id,
+			body.message,
+			event.context.cloudflare.env,
+			body.attachments
+		).catch((error: unknown) => console.warn('Failed to send ticket email reply', error));
 
 		return created;
 	} catch (error) {

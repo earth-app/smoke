@@ -64,14 +64,9 @@ export default defineNitroPlugin((nitro) => {
 		await recordInboundOnThread(ticketId, parsed);
 
 		if (isNewTicket) {
-			const state = await ensureThreadVerification(parsed.from, ticketId, env);
-			await sendAutoAck(message, parsed, ticketId, ticketTitle, state, env).catch((error) =>
+			await sendAutoAck(message, parsed, ticketId, ticketTitle, env).catch((error) =>
 				console.warn('Failed to send auto-ack reply', error)
 			);
 		}
-
-		await reapStaleUnverified(env).catch(() => {
-			// reaper is best-effort
-		});
 	});
 });
