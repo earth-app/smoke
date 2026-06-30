@@ -44,7 +44,7 @@
     "luxon": "^3.7.2",
     "mimetext": "^3.0.28",
     "nuxt": "^4.4.8",
-    "nuxt-api-shield": "^0.10.2",
+    "nuxt-api-shield": "^1.0.0",
     "nuxt-schema-org": "^6.2.3",
     "nuxt-viewport": "^2.4.0",
     "postal-mime": "^2.7.5",
