@@ -66,6 +66,8 @@ export function useAuth() {
 		authStore.setSessionToken(token);
 	};
 
+	const can = (permission: Permission): boolean => !!user.value?.permissions?.includes(permission);
+
 	// load user state
 	fetchUser();
 
@@ -76,6 +78,7 @@ export function useAuth() {
 		isAdmin,
 		isManager,
 		isAgent,
+		can,
 		fetchUser,
 		updateUser,
 		login,
