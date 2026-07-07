@@ -179,6 +179,67 @@ export function resetCollegeDB() {
 	collegeDBInitialized = false;
 }
 
+// idempotent ddl; NuxtHub/wrangler have no migration files for these tables, so we create
+// them at runtime across every shard (drop-in: no manual migration step to self-host)
+const SCHEMA_DDL = [
+	`CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, password_hash BLOB, password_salt BLOB, password_algorithm TEXT, data BLOB NOT NULL, email_lookup TEXT NOT NULL, wrapped_dek BLOB NOT NULL, nonce BLOB NOT NULL, tag BLOB NOT NULL, algorithm TEXT NOT NULL, version INTEGER NOT NULL)`,
+	`CREATE INDEX IF NOT EXISTS idx_users_username ON users (username)`,
+	`CREATE INDEX IF NOT EXISTS idx_users_email_lookup ON users (email_lookup)`,
+	`CREATE INDEX IF NOT EXISTS idx_users_created_at ON users (created_at)`,
+	`CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT, avatar_url TEXT, created_at INTEGER NOT NULL, data BLOB NOT NULL, wrapped_dek BLOB NOT NULL, nonce BLOB NOT NULL, tag BLOB NOT NULL, algorithm TEXT NOT NULL, version INTEGER NOT NULL)`,
+	`CREATE INDEX IF NOT EXISTS idx_customers_created_at ON customers (created_at)`,
+	`CREATE TABLE IF NOT EXISTS labels (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, color TEXT, created_at INTEGER NOT NULL)`,
+	`CREATE INDEX IF NOT EXISTS idx_labels_name ON labels (name)`,
+	`CREATE TABLE IF NOT EXISTS tickets (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, description TEXT NOT NULL, customer_id INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'open', priority TEXT NOT NULL DEFAULT 'none', labels TEXT, assignees TEXT, private INTEGER NOT NULL DEFAULT 0, messages_data BLOB, messages_wrapped_dek BLOB, messages_nonce BLOB, messages_tag BLOB, messages_algorithm TEXT, messages_version INTEGER, attachments_data BLOB, attachments_wrapped_dek BLOB, attachments_nonce BLOB, attachments_tag BLOB, attachments_algorithm TEXT, attachments_version INTEGER)`,
+	`CREATE INDEX IF NOT EXISTS idx_tickets_customer_id ON tickets (customer_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets (status)`,
+	`CREATE INDEX IF NOT EXISTS idx_tickets_created_at ON tickets (created_at)`
+];
+
+let schemaEnsured = false;
+
+export function resetSchemaEnsured() {
+	schemaEnsured = false;
+}
+
+// run the ddl on every discovered shard once per process (idempotent via IF NOT EXISTS)
+export async function ensureSchema(env: any): Promise<void> {
+	if (schemaEnsured) return;
+
+	const bindings: unknown[] = [primaryDb];
+	for (const key of Object.keys(env ?? {})) {
+		if (key === 'KV' || key === 'CACHE' || key === 'EMAIL' || key === 'ShardCoordinator') continue;
+		if (key.startsWith('DB_') || key.startsWith('DB-') || key.startsWith('db-')) {
+			if (env[key]) bindings.push(env[key]);
+		}
+	}
+
+	for (const binding of bindings) {
+		let client: DrizzleClientLike | null = null;
+		const candidate = binding as DrizzleClientLike & { prepare?: unknown };
+		if (typeof candidate?.run === 'function') {
+			client = candidate;
+		} else if (typeof candidate?.prepare === 'function') {
+			try {
+				client = drizzleD1(binding as AnyD1Database);
+			} catch {
+				client = null;
+			}
+		}
+		if (!client?.run) continue;
+
+		for (const statement of SCHEMA_DDL) {
+			try {
+				await client.run(sql.raw(statement));
+			} catch (error) {
+				console.warn('ensureSchema statement failed', error);
+			}
+		}
+	}
+
+	schemaEnsured = true;
+}
+
 export function ensureCollegeDB(env: any) {
 	if (collegeDBInitialized) return;
 
