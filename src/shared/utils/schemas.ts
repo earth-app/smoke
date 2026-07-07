@@ -237,7 +237,8 @@ export const ticketMessageCreateBody = z
 		message: z.string().min(1).max(10_000),
 		reply_to: z.coerce.number().int().nonnegative().optional(),
 		sender: ticketActor.optional(),
-		attachments: z.array(ticketAttachment).optional()
+		attachments: z.array(ticketAttachment).optional(),
+		identity: z.enum(['self', 'team']).optional()
 	})
 	.describe('The body of a POST request to append a ticket message');
 
