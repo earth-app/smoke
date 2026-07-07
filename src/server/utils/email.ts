@@ -1,18 +1,19 @@
 import { first } from '@earth-app/collegedb';
-import { EmailMessage } from 'cloudflare:email';
 import { DBTicket } from 'hub:db:schema';
 import { createMimeMessage } from 'mimetext';
 import PostalMime from 'postal-mime';
 
 // #region types + constants
 
-// cloudflare email service smtp submission endpoint (sends to any recipient, no verified-dest cap)
-const EMAIL_SERVICE_HOST = 'smtp.mx.cloudflare.net';
-
-// env vars the email engine needs before it will accept/answer inbound mail
-const REQUIRED_ENV = ['MASTER_KEY', 'HMAC_SECRET', 'CF_EMAIL_TOKEN', 'SUPPORT_EMAIL'];
+// keys that gate the crypto + threading layer; transport is resolved separately via getEmailConfig
+const REQUIRED_ENV = ['MASTER_KEY', 'HMAC_SECRET'];
 
 const MSGID_INDEX_TTL = 60 * 60 * 24 * 90;
+
+// kv index mapping a linked agent mailbox hash -> user id (work mailbox != login email)
+const agentEmailKey = (hash: string) => `smoke:agent_email:${hash}`;
+
+export type SenderIdentity = 'self' | 'team';
 
 type EmailThread = {
 	subject: string;
@@ -37,20 +38,30 @@ export type ParsedInboundEmail = {
 
 // #region config
 
-export function isEmailConfigured(env: any): boolean {
-	return REQUIRED_ENV.every((key) => typeof env?.[key] === 'string' && env[key].length > 0);
+// crypto/threading keys present and an outbound transport resolvable (custom smtp or cf email service)
+export async function isEmailConfigured(env: any): Promise<boolean> {
+	const hasKeys = REQUIRED_ENV.every(
+		(key) => typeof env?.[key] === 'string' && env[key].length > 0
+	);
+	if (!hasKeys) return false;
+	return (await getEmailConfig(env)) != null;
 }
 
-function siteUrl(env: any): string {
-	const url = env?.NUXT_PUBLIC_SITE_URL;
+async function supportAddress(env: any): Promise<string> {
+	const email = await getEmailSettings();
+	return email.support_email || String(env?.SUPPORT_EMAIL ?? '');
+}
+
+async function siteUrl(env: any): Promise<string> {
+	const email = await getEmailSettings();
+	const url = email.site_url || env?.NUXT_PUBLIC_SITE_URL;
 	return typeof url === 'string' && url.length > 0
 		? url.replace(/\/$/, '')
 		: 'https://smoke.pages.dev';
 }
 
-function supportDomain(env: any): string {
-	const support = String(env?.SUPPORT_EMAIL ?? '');
-	return support.split('@')[1] ?? 'localhost';
+function domainOf(address: string): string {
+	return String(address ?? '').split('@')[1] ?? 'localhost';
 }
 
 // #endregion
@@ -244,8 +255,8 @@ function buildMime(options: {
 	return message.asRaw();
 }
 
-function syntheticMessageId(ticketId: number, env: any): string {
-	return `<t${ticketId}.${Date.now()}.${crypto.randomUUID()}@${supportDomain(env)}>`;
+function syntheticMessageId(ticketId: number, domain: string): string {
+	return `<t${ticketId}.${Date.now()}.${crypto.randomUUID()}@${domain}>`;
 }
 
 function replySubject(subject: string): string {
@@ -265,7 +276,7 @@ export async function sendAutoAck(
 ): Promise<void> {
 	if (typeof message.reply !== 'function') return;
 
-	const link = `${siteUrl(env)}/tickets/${ticketId}`;
+	const link = `${await siteUrl(env)}/tickets/${ticketId}`;
 	const text = `Thanks for reaching out — we've opened ticket #${ticketId}. Our team will reply to this thread shortly; you can also follow it here: ${link}`;
 
 	// from = the per-ticket alias on the received domain (keeps reply() domain-aligned + routes replies back)
@@ -276,11 +287,13 @@ export async function sendAutoAck(
 		to: message.from,
 		subject: replySubject(parsed.subject || ticketTitle),
 		text,
-		messageId: syntheticMessageId(ticketId, env),
+		messageId: syntheticMessageId(ticketId, domainOf(message.to)),
 		inReplyTo: parsed.messageId,
 		references: parsed.messageId ? [parsed.messageId] : []
 	});
 
+	// lazy-import the workerd-only module so a node build (e2e preview) can load this file
+	const { EmailMessage } = await import('cloudflare:email');
 	await message.reply(new EmailMessage(from, message.from, raw));
 }
 
@@ -294,6 +307,7 @@ export async function replyNotConfigured(message: any): Promise<void> {
 		subject: 'Re: your message',
 		text: NOT_CONFIGURED_TEXT
 	});
+	const { EmailMessage } = await import('cloudflare:email');
 	await message.reply(new EmailMessage(message.to, message.from, raw));
 }
 
@@ -317,14 +331,21 @@ function toEdgeportAttachments(items?: OutboundAttachment[]) {
 	}));
 }
 
-// deliver an agent's reply (with any attachments) to the customer over email via cloudflare email service
+// resolve the display-name for the outbound From given the chosen sender identity
+function senderFromName(identity: SenderIdentity | undefined, agentName?: string): string {
+	if (identity === 'self' && agentName) return agentName;
+	return 'Support';
+}
+
+// deliver an agent's reply (with any attachments) to the customer via the resolved transport
 export async function sendTicketEmailReply(
 	ticketId: number,
 	body: string,
 	env: any,
-	attachments?: OutboundAttachment[]
+	attachments?: OutboundAttachment[],
+	options?: { identity?: SenderIdentity; agentName?: string }
 ): Promise<boolean> {
-	if (!isEmailConfigured(env)) return false;
+	if (!(await isEmailConfigured(env))) return false;
 
 	const thread = await getThread(ticketId);
 	if (!thread) return false;
@@ -334,10 +355,14 @@ export async function sendTicketEmailReply(
 	]);
 	if (!ticket || ticket.private === 1) return false;
 
-	const alias = buildReplyAlias(env.SUPPORT_EMAIL, ticketId);
+	const transport = await getEmailConfig(env);
+	if (!transport) return false;
+
+	// alias is derived from the base support address so customer replies route back to the ticket
+	const base = (await supportAddress(env)) || transport.from.replace(/^.*<|>.*$/g, '');
+	const alias = buildReplyAlias(base, ticketId);
 	const subject = replySubject(thread.subject || ticket.title);
 
-	// clean onboarded From + alias Reply-To so customer replies route back to the ticket
 	const headers: Record<string, string> = { 'Reply-To': alias };
 	if (thread.last_message_id) {
 		headers['In-Reply-To'] = thread.last_message_id;
@@ -346,12 +371,18 @@ export async function sendTicketEmailReply(
 		headers['References'] = thread.references.join(' ');
 	}
 
+	// override the transport display-name when replying as a named agent
+	const fromName = senderFromName(options?.identity, options?.agentName);
+	const fromAddress = transport.from.match(/<([^>]+)>/)?.[1] ?? transport.from;
+	const from = `${fromName} <${fromAddress}>`;
+
 	const { send } = await import('edgeport/smtp');
 	await send({
-		hostname: EMAIL_SERVICE_HOST,
-		tls: 'implicit',
-		auth: { username: 'api_token', password: env.CF_EMAIL_TOKEN, mechanism: 'PLAIN' },
-		from: `Support <${env.SUPPORT_EMAIL}>`,
+		hostname: transport.hostname,
+		port: transport.port,
+		tls: transport.tls,
+		auth: transport.auth,
+		from,
 		to: thread.customer_email,
 		subject,
 		text: body,
@@ -360,6 +391,115 @@ export async function sendTicketEmailReply(
 	});
 
 	return true;
+}
+
+// #endregion
+
+// #region agent email bridge
+
+async function agentEmailHash(env: any, email: string): Promise<string> {
+	return hmacSha256(env.HMAC_SECRET, email.trim().toLowerCase());
+}
+
+// link/unlink a work mailbox to a user so their email-client replies attribute to the account
+export async function linkAgentEmail(env: any, email: string, userId: string): Promise<void> {
+	await kv.set(agentEmailKey(await agentEmailHash(env, email)), userId);
+}
+
+export async function unlinkAgentEmail(env: any, email: string): Promise<void> {
+	await kv.del(agentEmailKey(await agentEmailHash(env, email)));
+}
+
+export async function resolveAgentByEmail(env: any, email: string): Promise<string | null> {
+	const byLink = await kv.get<string>(agentEmailKey(await agentEmailHash(env, email)));
+	if (byLink) return byLink;
+	// fall back to the account login email index
+	const user = await getUserByEmail(email, env).catch(() => null);
+	return user ? user.id : null;
+}
+
+// append an agent's email-client reply as a user message and mirror it to the customer
+export async function appendAgentEmailReply(
+	ticketId: number,
+	agentId: string,
+	parsed: ParsedInboundEmail,
+	env: any
+): Promise<void> {
+	const agent = await getUserById(agentId, env).catch(() => null);
+	await addTicketMessage(
+		ticketId,
+		{
+			message: parsed.text,
+			sender: agent
+				? {
+						kind: 'user',
+						id: agent.id,
+						username: agent.username,
+						email: agent.email,
+						name: agent.name,
+						avatar_url: agent.avatar_url
+					}
+				: { kind: 'user', id: agentId, username: 'team', name: 'Team' }
+		},
+		env
+	);
+
+	// mirror the agent's reply back to the customer as a named reply
+	await sendTicketEmailReply(ticketId, parsed.text, env, undefined, {
+		identity: 'self',
+		agentName: agent?.name || agent?.username
+	}).catch((error: unknown) => console.warn('Failed to mirror agent email reply', error));
+}
+
+// forward an inbound customer message to the ticket's assignees (or a team inbox fallback)
+export async function forwardToAgents(
+	ticketId: number,
+	parsed: ParsedInboundEmail,
+	env: any
+): Promise<void> {
+	if (!(await isEmailConfigured(env))) return;
+
+	const email = await getEmailSettings();
+	if (email.forward_to_agents === false) return;
+
+	const ticket = await getTicketById(ticketId, env, null).catch(() => null);
+	if (!ticket) return;
+
+	// gather assignee mailboxes; only those allowed to view the ticket
+	const recipients: string[] = [];
+	for (const assignee of ticket.assignees ?? []) {
+		if (!canViewPrivateTicket(assignee, ticket)) continue;
+		if (assignee.email) recipients.push(assignee.email);
+	}
+
+	// team-inbox fallback when unassigned; never leak a private ticket to a broad inbox
+	if (recipients.length === 0 && !ticket.private) {
+		const team = email.team_inbox || (await supportAddress(env));
+		if (team) recipients.push(team);
+	}
+	if (recipients.length === 0) return;
+
+	const transport = await getEmailConfig(env);
+	if (!transport) return;
+
+	const base = (await supportAddress(env)) || transport.from.replace(/^.*<|>.*$/g, '');
+	const alias = buildReplyAlias(base, ticketId);
+	const fromAddress = transport.from.match(/<([^>]+)>/)?.[1] ?? transport.from;
+	const subject = replySubject(parsed.subject);
+	const text = `New customer message on ticket #${ticketId} from ${parsed.name || parsed.from}:\n\n${parsed.text}\n\nReply to this email to respond to the customer.`;
+
+	const { send } = await import('edgeport/smtp');
+	await send({
+		hostname: transport.hostname,
+		port: transport.port,
+		tls: transport.tls,
+		auth: transport.auth,
+		from: `Support <${fromAddress}>`,
+		to: recipients,
+		subject,
+		text,
+		headers: { 'Reply-To': alias }
+	});
 }
 
 // #endregion
