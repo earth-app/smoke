@@ -25,31 +25,36 @@ export default defineEventHandler(async (event) => {
 	}
 
 	try {
+		// 'team' anonymizes the reply (generic Team identity, no personal name/avatar)
+		const identity = body.identity ?? 'self';
+		const sender =
+			identity === 'team'
+				? { kind: 'user' as const, id: current.id, username: 'team', name: 'Team' }
+				: {
+						kind: 'user' as const,
+						id: current.id,
+						username: current.username,
+						email: current.email,
+						name: current.name,
+						avatar_url: current.avatar_url
+					};
+
 		const created = await addTicketMessage(
 			id,
 			{
 				message: body.message,
 				reply_to: body.reply_to,
-				sender: {
-					kind: 'user',
-					id: current.id,
-					username: current.username,
-					email: current.email,
-					name: current.name,
-					avatar_url: current.avatar_url
-				},
+				sender,
 				attachments: body.attachments
 			},
 			event.context.cloudflare.env
 		);
 
 		// mirror the reply to the customer over email when the ticket is an email thread
-		await sendTicketEmailReply(
-			id,
-			body.message,
-			event.context.cloudflare.env,
-			body.attachments
-		).catch((error: unknown) => console.warn('Failed to send ticket email reply', error));
+		await sendTicketEmailReply(id, body.message, event.context.cloudflare.env, body.attachments, {
+			identity,
+			agentName: identity === 'team' ? 'Team' : current.name || current.username
+		}).catch((error: unknown) => console.warn('Failed to send ticket email reply', error));
 
 		return created;
 	} catch (error) {
