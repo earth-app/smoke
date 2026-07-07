@@ -3,7 +3,7 @@ export default defineNitroPlugin((nitro) => {
 		void context;
 
 		// degrade calmly when the email engine isn't fully configured
-		if (!isEmailConfigured(env)) {
+		if (!(await isEmailConfigured(env))) {
 			await replyNotConfigured(message).catch((error) =>
 				console.warn('Failed to send not-configured reply', error)
 			);
@@ -27,6 +27,18 @@ export default defineNitroPlugin((nitro) => {
 			return;
 		}
 
+		// existing ticket + a linked agent sender -> an agent reply from their own mailbox
+		const existingTicketId = await resolveTicketForInbound(parsed);
+		if (existingTicketId) {
+			const agentId = await resolveAgentByEmail(env, parsed.from);
+			if (agentId) {
+				await appendAgentEmailReply(existingTicketId, agentId, parsed, env);
+				if (parsed.messageId) await indexMessageId(parsed.messageId, existingTicketId);
+				await recordInboundOnThread(existingTicketId, parsed);
+				return;
+			}
+		}
+
 		const existingCustomer = await getCustomerByEmail(parsed.from, env);
 		const customer =
 			existingCustomer ??
@@ -35,8 +47,7 @@ export default defineNitroPlugin((nitro) => {
 				env
 			));
 
-		// thread a reply into its existing ticket, otherwise open a new conversation
-		let ticketId = await resolveTicketForInbound(parsed);
+		let ticketId = existingTicketId;
 		let isNewTicket = false;
 		let ticketTitle = parsed.subject;
 
@@ -68,5 +79,10 @@ export default defineNitroPlugin((nitro) => {
 				console.warn('Failed to send auto-ack reply', error)
 			);
 		}
+
+		// forward the customer message to assignees / team inbox so agents can reply from their mailbox
+		await forwardToAgents(ticketId, parsed, env).catch((error) =>
+			console.warn('Failed to forward inbound email to agents', error)
+		);
 	});
 });
