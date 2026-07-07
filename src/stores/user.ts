@@ -175,3 +175,134 @@ export const useUserStore = defineStore('user', () => {
 		setAvatar
 	};
 });
+
+export const useCustomerStore = defineStore('customer', () => {
+	const authStore = useAuthStore();
+
+	const cache = reactive(new Map<number, Customer>());
+	const listInFlight = reactive(new Map<string, Promise<Customer[]>>());
+	const getInFlight = reactive(new Map<number, Promise<Customer | null>>());
+
+	const authHeaders = (): Record<string, string> => {
+		const token = authStore.sessionToken;
+		return token ? { Authorization: `Bearer ${token}` } : {};
+	};
+
+	const set = (customer: Customer) => {
+		cache.set(customer.id, customer);
+	};
+
+	const get = (id: number): Customer | undefined => cache.get(id);
+
+	const listCustomers = async (options?: QueryParameters): Promise<Customer[]> => {
+		const params = toSearchParams(options);
+		const key = params.toString();
+
+		const existing = listInFlight.get(key);
+		if (existing) return existing;
+
+		const promise = (async () => {
+			try {
+				const customers = await $fetch<Customer[]>(`/api/customers?${key}`, {
+					cache: 'no-store',
+					credentials: 'include',
+					headers: authHeaders()
+				});
+				customers.forEach(set);
+				return customers;
+			} catch (error) {
+				console.error('Failed to list customers:', error);
+				return [];
+			} finally {
+				listInFlight.delete(key);
+			}
+		})();
+
+		listInFlight.set(key, promise);
+		return promise;
+	};
+
+	const fetchCustomer = async (id: number, force: boolean = false): Promise<Customer | null> => {
+		if (!force && cache.has(id)) return cache.get(id) || null;
+
+		const existing = getInFlight.get(id);
+		if (existing) return existing;
+
+		const promise = (async () => {
+			try {
+				const customer = await $fetch<Customer>(`/api/customers/${id}`, {
+					cache: 'no-store',
+					credentials: 'include',
+					headers: authHeaders()
+				});
+				set(customer);
+				return customer;
+			} catch (error) {
+				console.error(`Failed to fetch customer "${id}":`, error);
+				return null;
+			} finally {
+				getInFlight.delete(id);
+			}
+		})();
+
+		getInFlight.set(id, promise);
+		return promise;
+	};
+
+	const createCustomer = async (body: Partial<Customer>): Promise<Customer> => {
+		try {
+			const customer = await $fetch<Customer>(`/api/customers`, {
+				method: 'POST',
+				body,
+				credentials: 'include',
+				headers: authHeaders()
+			});
+			set(customer);
+			return customer;
+		} catch (error) {
+			console.error('Failed to create customer:', error);
+			throw error;
+		}
+	};
+
+	const patchCustomer = async (id: number, body: Partial<Customer>): Promise<Customer> => {
+		try {
+			const customer = await $fetch<Customer>(`/api/customers/${id}`, {
+				method: 'PATCH',
+				body,
+				credentials: 'include',
+				headers: authHeaders()
+			});
+			set(customer);
+			return customer;
+		} catch (error) {
+			console.error(`Failed to patch customer "${id}":`, error);
+			throw error;
+		}
+	};
+
+	const deleteCustomer = async (id: number): Promise<void> => {
+		try {
+			await $fetch(`/api/customers/${id}`, {
+				method: 'DELETE',
+				credentials: 'include',
+				headers: authHeaders()
+			});
+			cache.delete(id);
+		} catch (error) {
+			console.error(`Failed to delete customer "${id}":`, error);
+			throw error;
+		}
+	};
+
+	return {
+		cache,
+		get,
+		set,
+		listCustomers,
+		fetchCustomer,
+		createCustomer,
+		patchCustomer,
+		deleteCustomer
+	};
+});

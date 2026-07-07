@@ -1,3 +1,5 @@
+// #region users
+
 export function useUser(identifier: MaybeRefOrGetter<string>) {
 	const userStore = useUserStore();
 	const currentId = computed(() => toValue(identifier));
@@ -161,3 +163,64 @@ export function useUser(identifier: MaybeRefOrGetter<string>) {
 		removeLabels
 	};
 }
+
+// #endregion
+
+// #region customers
+
+export function useCustomers(options?: MaybeRefOrGetter<QueryParameters | undefined>) {
+	const customersStore = useCustomerStore();
+
+	const customers = ref<Customer[]>([]);
+	const pending = ref(false);
+
+	const listCustomers = async (override?: QueryParameters): Promise<Customer[]> => {
+		pending.value = true;
+		try {
+			const query = override ?? toValue(options);
+			const result = await customersStore.listCustomers(query);
+			customers.value = result;
+			return result;
+		} finally {
+			pending.value = false;
+		}
+	};
+
+	const fetchCustomer = async (id: number, force: boolean = false) => {
+		return await customersStore.fetchCustomer(id, force);
+	};
+
+	const createCustomer = async (body: Partial<Customer>) => {
+		return await customersStore.createCustomer(body);
+	};
+
+	const patchCustomer = async (id: number, body: Partial<Customer>) => {
+		return await customersStore.patchCustomer(id, body);
+	};
+
+	const deleteCustomer = async (id: number) => {
+		await customersStore.deleteCustomer(id);
+		customers.value = customers.value.filter((c) => c.id !== id);
+	};
+
+	if (options !== undefined) {
+		listCustomers();
+		watch(
+			() => toValue(options),
+			() => listCustomers(),
+			{ deep: true }
+		);
+	}
+
+	return {
+		customers,
+		pending,
+		listCustomers,
+		fetchCustomer,
+		createCustomer,
+		patchCustomer,
+		deleteCustomer
+	};
+}
+
+// #endregion
