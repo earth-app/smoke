@@ -1,7 +1,9 @@
 # Nuxt dev/build outputs
 .output
 .data
+.data-setup
 .nuxt
+.nuxt-setup
 .nitro
 .cache
 dist
@@ -24,4 +26,9 @@ logs
 
 # Testing
 coverage/
+.coverage
 test-report.junit.xml
+playwright-report/
+playwright-results/
+test-results/
+monocart-report/

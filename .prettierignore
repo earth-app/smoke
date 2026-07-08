@@ -1,5 +1,7 @@
 .nuxt/
 .config/
+.wrangler/
+.data/
 bun.lock
 node_modules/
 package.json
@@ -7,3 +9,6 @@ package-lock.json
 LICENSE
 tsconfig.json
 tailwind.config.js
+coverage/
+playwright-report/
+playwright-results/
