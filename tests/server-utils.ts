@@ -3,11 +3,14 @@
 // and registers each export on globalThis (so route handlers and the util
 // files' bare cross-references resolve outside the nitro runtime)
 import * as auth from '~/server/utils/auth';
+import * as cloudflare from '~/server/utils/cloudflare';
 import * as customer from '~/server/utils/customer';
 import * as email from '~/server/utils/email';
+import * as emailPoll from '~/server/utils/email-poll';
 import * as encryption from '~/server/utils/encryption';
 import * as label from '~/server/utils/label';
 import * as request from '~/server/utils/request';
+import * as settings from '~/server/utils/settings';
 import * as ticket from '~/server/utils/ticket';
 import * as user from '~/server/utils/user';
 // shared-type enums/consts (Role, Permission, TicketStatus, ...) are also
@@ -24,6 +27,9 @@ const modules = [
 	ticket,
 	label,
 	email,
+	emailPoll,
+	settings,
+	cloudflare,
 	userTypes,
 	ticketTypes
 ];
@@ -34,10 +40,13 @@ for (const mod of modules) {
 }
 
 export * from '~/server/utils/auth';
+export * from '~/server/utils/cloudflare';
 export * from '~/server/utils/customer';
 export * from '~/server/utils/email';
+export * from '~/server/utils/email-poll';
 export * from '~/server/utils/encryption';
 export * from '~/server/utils/label';
 export * from '~/server/utils/request';
+export * from '~/server/utils/settings';
 export * from '~/server/utils/ticket';
 export * from '~/server/utils/user';
