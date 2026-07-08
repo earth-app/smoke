@@ -14,7 +14,7 @@ import '#server-utils';
 export const TEST_ENV = {
 	MASTER_KEY: 'm'.repeat(32),
 	HMAC_SECRET: 'h'.repeat(32),
-	CF_EMAIL_TOKEN: 'cf-email-token',
+	CF_API_TOKEN: 'cf-api-token',
 	SUPPORT_EMAIL: 'support@smoke.example.com',
 	NUXT_PUBLIC_SITE_URL: 'https://smoke.example.com'
 };
