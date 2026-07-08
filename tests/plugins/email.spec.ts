@@ -197,7 +197,7 @@ describe('cloudflare:email plugin', () => {
 		const message = buildMessage({ from: 'someone@example.com', subject: 'Hello', body: 'hi' });
 		await handler({
 			message,
-			env: { ...runtime.env, CF_EMAIL_TOKEN: '' },
+			env: { ...runtime.env, CF_API_TOKEN: '', CF_EMAIL_TOKEN: '', SUPPORT_EMAIL: '' },
 			context: {}
 		});
 
@@ -257,7 +257,7 @@ describe('sendTicketEmailReply (Email Service via edgeport)', () => {
 		expect(call.hostname).toBe('smtp.mx.cloudflare.net');
 		expect(call.tls).toBe('implicit');
 		expect(call.auth.username).toBe('api_token');
-		expect(call.auth.password).toBe('cf-email-token');
+		expect(call.auth.password).toBe('cf-api-token');
 		expect(call.to).toBe(email);
 		expect(call.text).toBe('can you send a screenshot?');
 		// clean onboarded From, alias Reply-To, threaded against the customer's last message
