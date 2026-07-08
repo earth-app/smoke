@@ -1,13 +1,20 @@
 import tailwindcss from '@tailwindcss/vite';
 import { defineNuxtConfig } from 'nuxt/config';
 
+// e2e coverage builds run under node (preview server + source-mapped coverage), not workerd
+const E2E_BUILD = process.env.NUXT_PUBLIC_E2E === '1';
+
 export default defineNuxtConfig({
 	site: {
 		url: process.env.NUXT_PUBLIC_SITE_URL || 'https://smoke.pages.dev'
 	},
 	runtimeConfig: {
+		// mock the cloudflare api in non-prod e2e so provisioning flows are testable offline
+		mockCf: process.env.MOCK_CF === '1',
 		public: {
-			site_url: process.env.NUXT_PUBLIC_SITE_URL
+			site_url: process.env.NUXT_PUBLIC_SITE_URL,
+			// gates the hydration marker used by playwright waitForHydration
+			e2e: process.env.NUXT_PUBLIC_E2E === '1'
 		},
 		turnstile: {
 			secretKey: process.env.NUXT_TURNSTILE_SECRET_KEY || ''
@@ -49,7 +56,8 @@ export default defineNuxtConfig({
 	},
 	$production: {
 		nitro: {
-			preset: 'cloudflare_module',
+			// e2e build serves via a node preview; the real deploy build stays cloudflare_module
+			preset: E2E_BUILD ? 'node-server' : 'cloudflare_module',
 			cloudflare: {
 				deployConfig: true,
 				nodeCompat: true
@@ -57,6 +65,13 @@ export default defineNuxtConfig({
 		}
 	},
 	nitro: {
+		// nitro tasks power the scheduled inbound-mail poll (off unless a mailbox is configured)
+		experimental: {
+			tasks: true
+		},
+		scheduledTasks: {
+			'*/15 * * * *': ['email:poll']
+		},
 		prerender: {
 			ignore: ['/api/**']
 		},
@@ -133,7 +148,9 @@ export default defineNuxtConfig({
 	},
 	nuxtApiShield: {
 		limit: {
-			max: 500,
+			// scale the limiter way up outside production so dev/e2e never trip it
+			max:
+				process.env.NODE_ENV === 'production' && process.env.NUXT_PUBLIC_E2E !== '1' ? 500 : 100000,
 			duration: 60,
 			ban: 300
 		},

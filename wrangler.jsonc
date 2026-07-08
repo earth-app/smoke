@@ -2,6 +2,10 @@
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"compatibility_date": "2026-05-18",
 	"compatibility_flags": ["nodejs_compat"],
+	"triggers": {
+		// scheduled inbound-mail poll; the task no-ops unless a mailbox is configured in settings
+		"crons": ["*/15 * * * *"]
+	},
 	"d1_databases": [
 		{
 			"binding": "DB",
