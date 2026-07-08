@@ -5,6 +5,15 @@ export const useAuthStore = defineStore('auth', () => {
 	const RECENT_LOGOUT_SUPPRESSION_MS = 5000;
 	const LAST_LOGOUT_STORAGE_KEY = 'earth-app-smoke:last-logout-at';
 
+	// e2e runs over http on 127.0.0.1; a Secure/SameSite=None cookie is dropped there and
+	// triggers a 401 -> re-login storm, so relax it when the e2e flag is set
+	const isE2E = !!useRuntimeConfig().public.e2e;
+	const sessionCookieOptions = {
+		maxAge: SESSION_COOKIE_MAX_AGE,
+		secure: !isE2E,
+		sameSite: (isE2E ? 'lax' : 'none') as 'lax' | 'none'
+	};
+
 	// undefined = loading, null = not logged in, User = logged in
 	const currentUser = ref<User | null | undefined>(null);
 	const sessionToken = ref<string | null>(null);
@@ -85,11 +94,7 @@ export const useAuthStore = defineStore('auth', () => {
 		}
 
 		if (import.meta.client) {
-			const sessionCookie = useCookie('session_token', {
-				maxAge: SESSION_COOKIE_MAX_AGE,
-				secure: true,
-				sameSite: 'none'
-			});
+			const sessionCookie = useCookie('session_token', sessionCookieOptions);
 			sessionCookie.value = normalized;
 		}
 	};
@@ -245,11 +250,7 @@ export const useAuthStore = defineStore('auth', () => {
 	if (import.meta.client) {
 		lastLogoutAt.value = readLastLogoutAt();
 
-		const sessionCookie = useCookie('session_token', {
-			maxAge: SESSION_COOKIE_MAX_AGE,
-			secure: true,
-			sameSite: 'none'
-		});
+		const sessionCookie = useCookie('session_token', sessionCookieOptions);
 		sessionToken.value = normalizeSessionToken(sessionCookie.value);
 	} else {
 		// server-side; read from request headers
