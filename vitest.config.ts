@@ -2,6 +2,8 @@ import { cloudflareTest } from '@cloudflare/vitest-pool-workers';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
+const integration = process.env.INTEGRATION === '1';
+
 export default defineConfig({
 	plugins: [
 		cloudflareTest({
@@ -25,7 +27,13 @@ export default defineConfig({
 		environment: 'node',
 		globals: false,
 		testTimeout: 30000,
-		include: ['tests/**/*.spec.ts', 'tests/**/*.test.ts'],
+		include: integration
+			? ['tests/integration/**/*.spec.ts']
+			: ['tests/**/*.spec.ts', 'tests/**/*.test.ts'],
+		// playwright specs live under tests/e2e (playwright cli); integration is docker-gated + opt-in
+		exclude: integration
+			? ['node_modules/**']
+			: ['tests/e2e/**', 'tests/integration/**', 'node_modules/**'],
 		setupFiles: ['tests/setup.ts'],
 		coverage: {
 			provider: 'istanbul' as const,
