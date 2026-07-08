@@ -14,9 +14,15 @@ bun run build            # nuxt build (cloudflare_module preset in production)
 bun run test             # vitest run (uses @cloudflare/vitest-pool-workers + wrangler.test.jsonc)
 bun run test:watch       # vitest in watch mode
 bun run test:coverage    # vitest with istanbul coverage (v8 native isn't available in Workers isolates)
+bun run test:e2e         # playwright (desktop + mobile) against a prod build/preview on 4000
+bun run test:e2e:setup   # isolated first-run wizard flow (fresh server on 4001)
+bun run test:integration # INTEGRATION=1 vitest tests/integration (GreenMail round-trip; needs docker up)
 bun run prettier         # write
 bun run prettier:check   # CI gate (Husky pre-commit runs lint-staged → prettier)
 ```
+
+Port is **4000** everywhere (dev/e2e/preview); the setup-test server uses **4001**. GreenMail for the
+integration lane: `docker compose -f docker/compose.yml up -d --wait` before `bun run test:integration`.
 
 Single test: `bunx vitest run tests/api/users/login.post.spec.ts` (or `-t "<name>"` to filter by test name).
 
@@ -25,23 +31,31 @@ Required env (see `.env.test` for example values; the test env keys are `'m'.rep
 - `MASTER_KEY` — ≥16 chars, used for envelope encryption of all PII.
 - `HMAC_SECRET` — hex ≥32 bytes, used to HMAC emails for lookup (emails themselves are encrypted, so they can't be queried directly).
 
-Email conversation engine (see the Email engine note below) — all required together; if any is missing the inbound handler degrades to a "not configured to receive emails" auto-reply and creates nothing:
+Email/Cloudflare config is **KV-overridable with env fallback** — the setup wizard + Settings page write it to KV (secrets sealed), so these env vars are optional in prod. `isEmailConfigured` is true when a transport resolves (custom SMTP or Cloudflare Email Service creds), KV-first.
 
-- `CF_EMAIL_TOKEN` — Cloudflare API token with the **Email Sending: Edit** permission. Used as the SMTP password (`api_token` / `CF_EMAIL_TOKEN`) against `smtp.mx.cloudflare.net` for on-demand outbound via **Cloudflare Email Service** (the `edgeport/smtp` client).
-- `SUPPORT_EMAIL` — base support address; reply aliases are `support+t<id>@<domain>`. Its domain must be onboarded to Cloudflare **Email Sending** (DKIM/SPF) for outbound, and have a **catch-all** Email Routing rule to this worker for inbound.
-- `NUXT_PUBLIC_SITE_URL` — used for the ticket link in the auto-ack (optional; falls back to the configured site url).
+- `CF_API_TOKEN` — Cloudflare API token (renamed from `CF_EMAIL_TOKEN`, still read as fallback). Used as the SMTP password for **Cloudflare Email Service** AND for account linking / Email Routing + Worker provisioning. Grant Email Sending + Email Routing/DNS/Workers edit for full drop-in setup.
+- `SUPPORT_EMAIL` — base support address; reply aliases are `support+t<id>@<domain>`.
+- `NUXT_PUBLIC_SITE_URL` — ticket link in the auto-ack (optional).
+- `SMTP_HOST`/`SMTP_PORT`/`SMTP_TLS`/`SMTP_USER`/`SMTP_PASS`/`SMTP_FROM` — override the outbound transport (any SMTP server); used by the GreenMail integration lane. `getEmailConfig(env)` resolves: env override → custom SMTP setting → Cloudflare Email Service.
+- `MOCK_CF=1` — mock the Cloudflare API (`isMockCf`) for offline e2e. `NUXT_PUBLIC_E2E=1` — enables the hydration marker + scales the rate limiter off.
 
 ## Layout
 
 - `srcDir: 'src/'`, `serverDir: 'src/server/'`, shared at `src/shared/` (Nuxt 4 config).
 - `src/server/api/` — file-based Nitro routes. `[id]/index.<method>.ts` is the standard shape.
 - `src/server/db/schema.ts` — Drizzle table definitions; `ensureCollegeDB(env)` must run before any query in a request. Import the tables/`DB*` types/`ensureCollegeDB` from the `hub:db:schema` alias (NuxtHub re-exports this file there), not via a relative `~/server/db/schema` path.
-- `src/server/utils/` — crypto, auth, sessions, and CRUD for users/customers/labels/tickets, split by domain (`auth.ts`, `user.ts`, `customer.ts`, `ticket.ts`, `label.ts`, `encryption.ts`, `request.ts`). Preserve the `// #region` boundaries within each file.
-- `src/server/plugins/` — Nitro plugins (e.g. `email.ts` hooks `cloudflare:email` for inbound mail). NOT `src/plugins/`, which is for app plugins.
+- `src/server/utils/` — crypto, auth, sessions, CRUD, plus `settings.ts` (KV settings + `getEmailConfig` transport resolver + secret sealing), `cloudflare.ts` (`cfFetch`/provisioning/`isMockCf`), `email.ts` + `email-poll.ts`. Preserve the `// #region` boundaries.
+- `src/server/api/` — file-based Nitro routes. Beyond the CRUD resources: `setup/{status,init}`, `settings.{get,post}` + `settings/test-email.post`, `cloudflare/{link,status,provision,unlink,poll}`, `analytics/summary`, `public/{tickets,status}`, `users/[id]/emails.{post,delete}` (agent mailbox link).
+- `src/server/tasks/email/poll.ts` — Nitro scheduled task (cron `*/15 * * * *` in `wrangler.jsonc`) for the optional IMAP/POP3 inbound poll; no-ops unless a mailbox is enabled in settings.
+- `src/server/plugins/email.ts` — hooks `cloudflare:email` for inbound (customer threading + agent-bridge attribution + forwarding). NOT `src/plugins/`.
+- `src/plugins/hydration.client.ts` — app plugin setting `data-hydrated` for Playwright, gated by `runtimeConfig.public.e2e`.
+- `src/pages/` — public (`index`, `submit`, `login`, `setup`, `status/[token]`) + `dashboard/**` (tickets/customers/labels/users/settings/analytics/profile).
+- `src/components/` — top-level for global chrome (`Navbar.vue`, `Footer.vue`, `Sidebar.vue`, icons, global animations); everything else in domain folders (`app/`, `ticket/`, `customer/`, `label/`, `user/`, `analytics/`, `cloudflare/`, `email/`), nested deeper when it helps (`user/field/`). Inside a folder use the SHORTHAND name — Nuxt prepends the folder path, so don't repeat the prefix: `ticket/Thread.vue` → `<TicketThread>` (correct), not `ticket/TicketThread.vue`; `user/field/Editor.vue` → `<UserFieldEditor>`.
+- `src/layouts/` — `default.vue` (public) + `dashboard.vue` (staff sidebar). `src/middleware/` — `setup.global`, `auth`, `staff`, `admin`.
 - `src/shared/types/{user,ticket}.ts` — domain types + `Role`, `Permission`, `DEFAULT_PERMISSIONS`.
 - `src/shared/utils/schemas.ts` — Zod schemas used by routes.
-- `src/utils/` — client/universal helpers (e.g. `request.ts` → `toSearchParams`, `QueryParameters`). Use this, never `~/server/utils`, from stores/composables/components.
-- `src/stores/` — Pinia stores (`auth`, `user`). `src/composables/` wraps them.
+- `src/utils/` — client/universal helpers (`request.ts` → `toSearchParams`, `QueryParameters`). Use this, never `~/server/utils`, from stores/composables/components.
+- `src/stores/` — Pinia stores (`auth`, `user`, `tickets`, `customers`, `labels`, `settings`, `cloudflare`, `analytics`). `src/composables/` wraps them (one file per domain — `useTicket.ts` holds both `useTicket` and `useTickets`).
 - `tests/setup.ts` mocks h3 globals (`defineEventHandler`, `createError`, `readValidatedBody`, etc.) so server modules can be unit-tested outside Nitro.
 - `tests/api/route-runtime.ts` builds an in-memory CollegeDB harness (in-memory SQL + KV providers, raw `CREATE TABLE` SQL) — use it for route tests instead of hitting real bindings.
 
@@ -67,10 +81,13 @@ Email conversation engine (see the Email engine note below) — all required tog
 
 **Email engine (`src/server/utils/email.ts` + `src/server/plugins/email.ts`).** Inbound mail (Cloudflare Email Routing → `cloudflare:email` hook) is parsed from the real `ForwardableEmailMessage` (`message.from`/`.to`/`.headers`/`.raw`, parsed with `postal-mime`), threaded into an existing ticket or used to open a new one, then answered with **one** synchronous `message.reply()` auto-ack (built with `mimetext`). Agent replies posted to `/api/tickets/[id]/messages` are mirrored to the customer via **Cloudflare Email Service** — `edgeport/smtp` `send()` to `smtp.mx.cloudflare.net:465` (implicit TLS, auth `api_token` / `CF_EMAIL_TOKEN`) — when the ticket is a non-private email thread.
 
-- **Two transports, by capability.** `message.reply()` (free, in-handler, DMARC-gated, once per inbound) handles the auto-ack + the "not configured" notice. **Email Service via edgeport** handles deferred agent replies — it sends to **any recipient** (no verified-destination requirement, no 200-address cap), so there is no provisioning/verification/recycling. The sender domain must be onboarded to Cloudflare Email Sending (DKIM/SPF); `CF_EMAIL_TOKEN` needs "Email Sending: Edit".
-- **No DB schema changes** — all email state lives in KV: `smoke:email_thread:<ticketId>` (subject + customer email + last Message-ID + References chain) and `smoke:email_msgid:<sha256(messageId)>` → ticketId (inbound resolution index).
-- **Threading resolution order:** reply alias `support+t<id>@…` (primary) → `In-Reply-To` → `References` chain. Outbound uses edgeport's structured `Mail`: `From: Support <SUPPORT_EMAIL>` + `Reply-To: <alias>` (so customer replies route straight back), `In-Reply-To`/`References` as verbatim `headers`, and the agent message's `attachments` forwarded (edgeport `multipart/mixed`). `mimetext` is now only used to build the `reply()` auto-ack / not-configured raw.
-- `edgeport/smtp` is **lazy-imported** inside the send path so the `#server-utils` test barrel doesn't pull `cloudflare:sockets` into every spec; tests `vi.mock('edgeport/smtp')`. Requires edgeport ≥ 1.0.1 (the `attachments` field).
+- **Provider-agnostic outbound.** `getEmailConfig(env)` in `settings.ts` resolves the transport: env `SMTP_*` override → custom SMTP setting (password sealed via `encrypt`) → **Cloudflare Email Service** (`smtp.mx.cloudflare.net:465` implicit TLS, `api_token`/`CF_API_TOKEN`) as the default polyfill. `sendTicketEmailReply` builds the `edgeport/smtp` `send()` from that; the sender display-name switches per `identity` ('self' = agent name, 'team' = anonymous). `message.reply()` still handles the free in-handler auto-ack + "not configured" notice.
+- **Agent bridge.** Assigned agents get a forwarded copy of inbound customer mail (`forwardToAgents`; gated by `canViewPrivateTicket`, team-inbox fallback). Replies FROM a linked mailbox (KV `smoke:agent_email:<hmac(email)>` → userId, set via `linkAgentEmail`) are attributed to that account as a `kind:'user'` message and mirrored to the customer; unmatched internal senders become an anonymous Team user. UI replies carry `identity: 'self'|'team'` on `POST /api/tickets/[id]/messages`.
+- **No DB schema changes** — email + settings state is all KV: `smoke:email_thread:<ticketId>`, `smoke:email_msgid:<sha256(messageId)>` → ticketId, `smoke:agent_email:<hmac(email)>` → userId, `smoke:setting:*` (branding/email/cloudflare; sealed secrets under `smoke:setting:cloudflare_token` / `email_smtp_password`).
+- **Threading resolution order:** reply alias `support+t<id>@…` (primary) → `In-Reply-To` → `References` chain.
+- `edgeport/smtp` (and `edgeport/imap`/`pop3` in `email-poll.ts`) are **lazy-imported** inside the send/poll paths so the `#server-utils` test barrel doesn't pull `cloudflare:sockets` into every spec; tests `vi.mock('edgeport/smtp')`. edgeport ≥ 1.0.2.
+
+**Cloudflare provisioning (`src/server/utils/cloudflare.ts`).** `cfFetch` wraps the CF REST API; `isMockCf(env)` (reads `MOCK_CF`) returns fixtures for offline e2e. The setup wizard / Settings → Cloudflare links an account (token sealed) and `provision` enables Email Routing, wires the catch-all→worker rule, registers the destination address, and creates/returns DKIM/SPF DNS records.
 
 ## Conventions
 
