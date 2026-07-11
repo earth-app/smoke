@@ -19,6 +19,9 @@ export type User = {
 	username: string;
 	email: string;
 	name?: string;
+	// optional real name; display resolves `<first> <last>` -> `<first>` -> `@username`
+	first_name?: string;
+	last_name?: string;
 	avatar_url?: string;
 	role: Role;
 	permissions: Permission[];
@@ -43,6 +46,8 @@ export enum Permission {
 	RemoveEmail = 'remove_email',
 	ViewPrivateTickets = 'view_private_tickets',
 	TogglePrivate = 'toggle_private',
+	LockThread = 'lock_thread',
+	ChatInLocked = 'chat_in_locked',
 	// customer permissions
 	ChangeCustomerName = 'change_customer_name',
 	ChangeCustomerTags = 'change_customer_tags',
@@ -50,6 +55,7 @@ export enum Permission {
 	ManageSelf = 'manage_self',
 	ManageUsers = 'manage_users',
 	ChangeUserLabels = 'change_user_labels',
+	ChangeAvatar = 'change_avatar',
 	// admin permissions
 	ManageSettings = 'manage_settings',
 	ToggleMaintenance = 'manage_maintenance'
@@ -124,6 +130,14 @@ export const ALL_PERMISSIONS: Record<Permission, PermissionData> = {
 		description: 'Allows the user to toggle the private status of a ticket.',
 		category: 'tickets'
 	},
+	[Permission.LockThread]: {
+		description: 'Allows the user to lock and unlock a ticket conversation.',
+		category: 'tickets'
+	},
+	[Permission.ChatInLocked]: {
+		description: 'Allows the user to post messages on a locked ticket.',
+		category: 'tickets'
+	},
 	// customers
 	[Permission.ChangeCustomerName]: {
 		description: "Allows the user to change a customer's name.",
@@ -144,6 +158,10 @@ export const ALL_PERMISSIONS: Record<Permission, PermissionData> = {
 	},
 	[Permission.ChangeUserLabels]: {
 		description: 'Allows the user to change user labels of other users.',
+		category: 'users'
+	},
+	[Permission.ChangeAvatar]: {
+		description: 'Allows the user to change their own avatar or icon.',
 		category: 'users'
 	},
 	// admin
@@ -169,7 +187,9 @@ export const DEFAULT_PERMISSIONS: Record<Role, Permission[]> = {
 		Permission.RemoveEmail,
 		Permission.ChangeCustomerName,
 		Permission.ChangeCustomerTags,
-		Permission.ManageSelf
+		Permission.ManageSelf,
+		Permission.ChatInLocked,
+		Permission.ChangeAvatar
 	],
 	[Role.Manager]: [
 		Permission.ReplyTicket,
@@ -188,9 +208,41 @@ export const DEFAULT_PERMISSIONS: Record<Role, Permission[]> = {
 		Permission.ManageSelf,
 		Permission.ManageUsers,
 		Permission.ChangeUserLabels,
-		Permission.TogglePrivate
+		Permission.TogglePrivate,
+		Permission.LockThread,
+		Permission.ChatInLocked,
+		Permission.ChangeAvatar
 	],
 	[Role.Admin]: Object.values(Permission)
 };
 
 export const ALL_ROLES = Object.values(Role);
+
+// permission dependencies: holding the key permission is meaningless without its prerequisites.
+// enforced server-side (deps auto-included) + surfaced in the UI (the prerequisite switch dims on).
+export const PERMISSION_REQUIRES: Partial<Record<Permission, Permission[]>> = {
+	[Permission.ManageUsers]: [Permission.ManageSelf],
+	[Permission.ChangeUserLabels]: [Permission.ManageUsers],
+	[Permission.ManageTicketMessages]: [Permission.CreateTicketMessages],
+	[Permission.ManageLabels]: [Permission.ChangeLabels],
+	[Permission.TogglePrivate]: [Permission.ViewPrivateTickets],
+	[Permission.LockThread]: [Permission.ChatInLocked]
+};
+
+// expand a permission set to include every transitive prerequisite (stable, deduped)
+export function expandPermissions(permissions: Permission[]): Permission[] {
+	const out = new Set<Permission>(permissions);
+	let changed = true;
+	while (changed) {
+		changed = false;
+		for (const p of [...out]) {
+			for (const dep of PERMISSION_REQUIRES[p] ?? []) {
+				if (!out.has(dep)) {
+					out.add(dep);
+					changed = true;
+				}
+			}
+		}
+	}
+	return [...out];
+}
