@@ -14,7 +14,19 @@
 		</NuxtLink>
 
 		<div class="ml-auto flex items-center gap-2">
-			<template v-if="isAuthenticated">
+			<template v-if="authResolving">
+				<Skeleton
+					variant="rect"
+					width="6rem"
+					height="2rem"
+				/>
+				<Skeleton
+					variant="avatar"
+					width="2rem"
+					height="2rem"
+				/>
+			</template>
+			<template v-else-if="isAuthenticated">
 				<UButton
 					to="/dashboard"
 					color="primary"
@@ -22,17 +34,27 @@
 					icon="mdi:view-dashboard-outline"
 					>Dashboard</UButton
 				>
-				<UAvatar
-					:src="user?.avatar_url"
-					:alt="user?.username"
+				<Avatar
+					:avatar="user?.avatar_url"
+					:id="user?.id"
+					:name="user?.username"
+					:role="user?.role"
 					size="sm"
 				/>
 			</template>
 			<template v-else>
 				<UButton
+					to="/portal/login"
+					color="neutral"
+					variant="ghost"
+					icon="mdi:account-circle-outline"
+					>My Requests</UButton
+				>
+				<UButton
 					to="/login"
 					color="primary"
 					variant="solid"
+					icon="mdi:login"
 					>Log In</UButton
 				>
 			</template>
@@ -41,8 +63,13 @@
 </template>
 
 <script setup lang="ts">
-const { user, isAuthenticated } = useAuth();
+const { user, isAuthenticated, sessionToken } = useAuth();
 const { settings } = useSettings();
 
 const brandName = computed(() => (settings.value?.name as string) || 'Smoke');
+
+// avoid the anonymous->staff flash: a cookie token present but the user not yet loaded = still resolving
+const authResolving = computed(
+	() => user.value === undefined || (!!sessionToken.value && !user.value)
+);
 </script>
