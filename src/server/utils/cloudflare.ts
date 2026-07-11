@@ -131,7 +131,7 @@ export async function verifyToken(token: string): Promise<{ status?: string }> {
 
 // best-effort scope list from the verify endpoint
 export async function getTokenScopes(token: string): Promise<string[]> {
-	if (MOCK) return ['email', 'dns', 'workers'];
+	if (MOCK) return ['email', 'dns', 'workers', 'workers ai'];
 	try {
 		const v = await cfFetch<any>(token, `/user/tokens/verify`, { method: 'GET' });
 		const scopes = v?.scopes ?? v?.policies;
@@ -139,6 +139,65 @@ export async function getTokenScopes(token: string): Promise<string[]> {
 	} catch {
 		return [];
 	}
+}
+
+export const CF_CAPABILITIES = [
+	{
+		key: 'send',
+		label: 'Send Outbound Email',
+		permission: 'Email Sending: Send',
+		keywords: ['email', 'send'],
+		description: 'Send agent replies and auto-acknowledgements via Cloudflare Email Service.'
+	},
+	{
+		key: 'routing',
+		label: 'Inbound Email Routing',
+		permission: 'Email Routing Addresses: Edit',
+		keywords: ['email', 'routing'],
+		description: 'Turn inbound customer emails into tickets via a catch-all rule.'
+	},
+	{
+		key: 'dns',
+		label: 'Auto-Configure DNS',
+		permission: 'DNS: Edit',
+		keywords: ['dns'],
+		description: 'Create the MX / SPF / DKIM records for your domain automatically.'
+	},
+	{
+		key: 'workers',
+		label: 'Deploy Email Worker',
+		permission: 'Workers Scripts: Edit',
+		keywords: ['workers', 'worker'],
+		description: 'Provision the worker that receives mail and threads it into tickets.'
+	},
+	{
+		key: 'ai',
+		// keyword avoids matching 'email' (which contains 'ai'); real scopes are opaque policy ids
+		label: 'AI-Powered Replies',
+		permission: 'Workers AI: Read',
+		keywords: ['workers ai', 'workersai'],
+		description: 'Draft support replies with Cloudflare AI models.'
+	}
+] as const;
+
+export type CfCapability = {
+	key: string;
+	label: string;
+	permission: string;
+	description: string;
+	granted: boolean;
+};
+
+// map best-effort token scopes to a per-feature granted/blocked matrix
+export function cloudflareCapabilities(scopes: string[]): CfCapability[] {
+	const lower = scopes.map((s) => s.toLowerCase());
+	return CF_CAPABILITIES.map((c) => ({
+		key: c.key,
+		label: c.label,
+		permission: c.permission,
+		description: c.description,
+		granted: c.keywords.some((k) => lower.some((s) => s.includes(k)))
+	}));
 }
 
 export async function listZones(token: string, accountId: string): Promise<CfZone[]> {
@@ -217,6 +276,43 @@ export async function upsertCatchAllToWorker(
 	});
 }
 
+// worker scripts on the account; the script name is its id (the catch-all target)
+export async function listWorkerScripts(
+	token: string,
+	accountId: string
+): Promise<{ id: string }[]> {
+	if (MOCK) return [{ id: 'smoke' }];
+	const res = await cfFetch<any[]>(token, `/accounts/${accountId}/workers/scripts`, {
+		method: 'GET'
+	});
+	return Array.isArray(res)
+		? res.map((s) => ({ id: String(s?.id ?? s?.name ?? '') })).filter((s) => s.id.length > 0)
+		: [];
+}
+
+// the zone's email routing catch-all rule (or null when none exists / it can't be read)
+export type CfCatchAllRule = {
+	enabled: boolean;
+	actions: { type: string; value?: string[] }[];
+	matchers: { type: string }[];
+};
+
+export async function getCatchAllRule(
+	token: string,
+	zoneId: string
+): Promise<CfCatchAllRule | null> {
+	if (MOCK) return null;
+	const res = await cfFetch<any>(token, `/zones/${zoneId}/email/routing/rules/catch_all`, {
+		method: 'GET'
+	});
+	if (!res || typeof res !== 'object') return null;
+	return {
+		enabled: Boolean(res.enabled),
+		actions: Array.isArray(res.actions) ? res.actions : [],
+		matchers: Array.isArray(res.matchers) ? res.matchers : []
+	};
+}
+
 export async function listDestinationAddresses(
 	token: string,
 	accountId: string
@@ -246,3 +342,157 @@ export async function addDestinationAddress(
 		if (!isBenignCfError(e)) throw e;
 	}
 }
+
+// #region email sending (outbound onboarding)
+
+// an email sending subdomain (zone-scoped); enabled means outbound is live for that domain
+export type CfSendingSubdomain = { tag: string; name: string; enabled: boolean };
+
+export type EmailSendingProvision = {
+	domain: string;
+	subdomain: string;
+	enabled: boolean;
+	records: CfDnsRecord[];
+	created: string[];
+	auto_created: boolean;
+};
+
+// list the zone's email sending subdomains (each carries enabled + a dkim selector)
+export async function listSendingSubdomains(
+	token: string,
+	zoneId: string
+): Promise<CfSendingSubdomain[]> {
+	if (MOCK) return [{ tag: 'sub-mock', name: 'example.com', enabled: true }];
+	const res = await cfFetch<any[]>(token, `/zones/${zoneId}/email/sending/subdomains`, {
+		method: 'GET'
+	});
+	return Array.isArray(res)
+		? res.map((s) => ({
+				tag: String(s?.tag ?? s?.id ?? ''),
+				name: String(s?.name ?? ''),
+				enabled: Boolean(s?.enabled)
+			}))
+		: [];
+}
+
+// enable email sending for a domain; reuses an existing subdomain rather than duplicating it
+export async function enableEmailSending(
+	token: string,
+	zoneId: string,
+	domain: string
+): Promise<CfSendingSubdomain> {
+	if (MOCK) return { tag: 'sub-mock', name: domain, enabled: true };
+	try {
+		const existing = (await listSendingSubdomains(token, zoneId)).find(
+			(s) => s.name.toLowerCase() === domain.toLowerCase()
+		);
+		if (existing) return existing;
+	} catch {
+		// fall through to create when the list can't be read
+	}
+	const res = await cfFetch<any>(token, `/zones/${zoneId}/email/sending/subdomains`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ name: domain })
+	});
+	return {
+		tag: String(res?.tag ?? res?.id ?? ''),
+		name: String(res?.name ?? domain),
+		enabled: Boolean(res?.enabled)
+	};
+}
+
+// the expected spf/dkim/mx records for a sending subdomain (what the user must add to dns)
+export async function getEmailSendingDns(
+	token: string,
+	zoneId: string,
+	subdomainId: string
+): Promise<CfDnsRecord[]> {
+	if (MOCK) {
+		return [
+			{ type: 'TXT', name: 'example.com', content: 'v=spf1 include:_spf.mx.cloudflare.net ~all' },
+			{
+				type: 'TXT',
+				name: 'cf2024-1._domainkey.example.com',
+				content: 'v=DKIM1; p=MOCKDKIMPUBLICKEY'
+			},
+			{ type: 'MX', name: 'example.com', content: 'route1.mx.cloudflare.net', priority: 1 }
+		];
+	}
+	const res = await cfFetch<CfDnsRecord[]>(
+		token,
+		`/zones/${zoneId}/email/sending/subdomains/${subdomainId}/dns`,
+		{ method: 'GET' }
+	);
+	return Array.isArray(res) ? res : [];
+}
+
+// whether the support domain is onboarded to email sending (an enabled matching subdomain)
+export async function isEmailSendingVerified(
+	token: string,
+	zoneId: string,
+	domain: string
+): Promise<boolean> {
+	// a provisioned zone counts as verified on the offline mock path
+	if (MOCK) return Boolean(zoneId);
+	if (!zoneId || !domain) return false;
+	try {
+		const d = domain.toLowerCase();
+		const subs = await listSendingSubdomains(token, zoneId);
+		return subs.some((s) => {
+			const name = s.name.toLowerCase();
+			return s.enabled && (name === d || d.endsWith(`.${name}`) || name.endsWith(`.${d}`));
+		});
+	} catch {
+		return false;
+	}
+}
+
+// enable email sending for the support domain and return the dns records to add. when
+// autoDns is set (DNS: Edit granted) the spf/dkim/mx records are also created in the zone
+export async function provisionEmailSending(
+	token: string,
+	zoneId: string,
+	domain: string,
+	opts: { autoDns?: boolean } = {}
+): Promise<EmailSendingProvision> {
+	if (MOCK) {
+		const records: CfDnsRecord[] = [
+			{ type: 'TXT', name: domain, content: 'v=spf1 include:_spf.mx.cloudflare.net ~all' },
+			{
+				type: 'TXT',
+				name: `cf2024-1._domainkey.${domain}`,
+				content: 'v=DKIM1; p=MOCKDKIMPUBLICKEY'
+			},
+			{ type: 'MX', name: domain, content: 'route1.mx.cloudflare.net', priority: 1 }
+		];
+		return {
+			domain,
+			subdomain: 'sub-mock',
+			enabled: true,
+			records,
+			created: opts.autoDns ? records.map((r) => r.name) : [],
+			auto_created: Boolean(opts.autoDns)
+		};
+	}
+
+	const sub = await enableEmailSending(token, zoneId, domain);
+	const records = await getEmailSendingDns(token, zoneId, sub.tag);
+	let created: string[] = [];
+	let autoCreated = false;
+	if (opts.autoDns && records.length > 0) {
+		const result = await ensureEmailDnsRecords(token, zoneId, records);
+		created = result.created;
+		autoCreated = true;
+	}
+	return {
+		domain,
+		subdomain: sub.tag,
+		enabled: sub.enabled,
+		records,
+		created,
+		auto_created: autoCreated
+	};
+}
+
+// #endregion
