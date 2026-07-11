@@ -1,6 +1,6 @@
-import { firstByLookupKey } from '@earth-app/collegedb';
 import type { H3Event } from 'h3';
-import { DBUser, ensureCollegeDB } from 'hub:db:schema';
+import type { DBUser } from 'hub:db:schema';
+import { ensureCollegeDB } from 'hub:db:schema';
 import { kv } from 'hub:kv';
 
 const SESSION_TOKEN_BYTES = 48;
@@ -70,7 +70,8 @@ export async function deleteSessionTokens(userId: string): Promise<void> {
 async function validateSessionToken(userId: string, tokenHash: string): Promise<boolean> {
 	const tokenHashKey = `smoke:session_token_hash:${userId}:${tokenHash}`;
 	const exists = await kv.get<string>(tokenHashKey);
-	return exists === '1';
+	// some kv backends coerce the stored '1' to number 1 on read
+	return String(exists) === '1';
 }
 
 async function getSessionTokenLookup(
@@ -159,7 +160,11 @@ export async function getOptionalLoggedIn(event: H3Event): Promise<User | null> 
 }
 
 export function canViewPrivateTicket(current: User | null, ticket: Ticket): boolean {
-	if (!ticket.private) {
+	const visibility =
+		ticket.visibility ?? (ticket.private ? TicketVisibility.Private : TicketVisibility.Public);
+
+	// public: anyone (incl. the anonymous customer holding a status token)
+	if (visibility === TicketVisibility.Public) {
 		return true;
 	}
 
@@ -167,6 +172,12 @@ export function canViewPrivateTicket(current: User | null, ticket: Ticket): bool
 		return false;
 	}
 
+	// internal: any signed-in staff member
+	if (visibility === TicketVisibility.Internal) {
+		return true;
+	}
+
+	// private: needs a viewing permission or being an assignee
 	if (
 		current.permissions.includes(Permission.ViewPrivateTickets) ||
 		current.permissions.includes(Permission.ManageTicket) ||
@@ -215,14 +226,14 @@ export async function logIn(
 		// only compute hash if guarenteed to be an email
 		const email0 = usernameOrEmail.trim().toLowerCase();
 		const emailLookupHash = await hmacSha256(env.HMAC_SECRET, email0);
-		user = await firstByLookupKey<DBUser>(
+		user = await firstRowByLookup<DBUser>(
 			lookupKey,
 			`SELECT ${USER_SELECT_COLUMNS} FROM users WHERE email_lookup = ?`,
 			[emailLookupHash]
 		);
 	} else {
 		const username0 = usernameOrEmail.trim();
-		user = await firstByLookupKey<DBUser>(
+		user = await firstRowByLookup<DBUser>(
 			lookupKey,
 			`SELECT ${USER_SELECT_COLUMNS} FROM users WHERE username = ?`,
 			[username0]
