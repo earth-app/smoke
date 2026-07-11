@@ -11,7 +11,7 @@ import { sql } from 'drizzle-orm';
 import type { AnyD1Database } from 'drizzle-orm/d1';
 import { drizzle as drizzleD1 } from 'drizzle-orm/d1';
 import { blob, index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
-import { db as primaryDb } from 'hub:db';
+import { createError } from 'h3';
 import { kv } from 'hub:kv';
 
 export const users = sqliteTable(
@@ -206,10 +206,10 @@ export function resetSchemaEnsured() {
 export async function ensureSchema(env: any): Promise<void> {
 	if (schemaEnsured) return;
 
-	const bindings: unknown[] = [primaryDb];
+	const bindings: unknown[] = env?.DB ? [env.DB] : [];
 	for (const key of Object.keys(env ?? {})) {
 		if (key === 'KV' || key === 'CACHE' || key === 'EMAIL' || key === 'ShardCoordinator') continue;
-		if (key.startsWith('DB_') || key.startsWith('DB-') || key.startsWith('db-')) {
+		if (key.toLowerCase().startsWith('db_') || key.toLowerCase().startsWith('db-')) {
 			if (env[key]) bindings.push(env[key]);
 		}
 	}
@@ -262,7 +262,7 @@ export function ensureCollegeDB(env: any) {
 		});
 	}
 
-	const primaryProvider = toShardProvider(primaryDb);
+	const primaryProvider = toShardProvider(env.DB);
 	if (!primaryProvider) {
 		throw createError({
 			statusCode: 500,
