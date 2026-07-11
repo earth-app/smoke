@@ -1,6 +1,7 @@
-import { allAllShardsGlobal, first, firstByLookupKey, run } from '@earth-app/collegedb';
+import { allAllShardsGlobal, run } from '@earth-app/collegedb';
 import type { H3Event } from 'h3';
-import { DBUser, ensureCollegeDB } from 'hub:db:schema';
+import type { DBUser } from 'hub:db:schema';
+import { ensureCollegeDB } from 'hub:db:schema';
 
 // #region encryption
 
@@ -27,6 +28,8 @@ export async function decryptUser(
 		username: user.username,
 		email: typeof decrypted.email === 'string' ? decrypted.email : '',
 		name: typeof decrypted.name === 'string' ? decrypted.name : undefined,
+		first_name: typeof decrypted.first_name === 'string' ? decrypted.first_name : undefined,
+		last_name: typeof decrypted.last_name === 'string' ? decrypted.last_name : undefined,
 		avatar_url: typeof decrypted.avatar_url === 'string' ? decrypted.avatar_url : undefined,
 		role: decrypted.role as Role,
 		permissions: Array.isArray(decrypted.permissions)
@@ -52,6 +55,29 @@ export async function decryptUsers(users: DBUser[], masterKey: string): Promise<
 	}
 
 	return decrypted.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+}
+
+// #endregion
+
+// #region owner
+
+// the founding admin (set at setup); their role + permissions are locked
+const OWNER_KEY = 'smoke:owner_user';
+
+export async function getOwnerUserId(): Promise<string | null> {
+	try {
+		return (await kv.get<string>(OWNER_KEY)) ?? null;
+	} catch {
+		return null;
+	}
+}
+
+export async function setOwnerUserId(id: string): Promise<void> {
+	await kv.set(OWNER_KEY, id);
+}
+
+export async function isOwnerUser(id: string): Promise<boolean> {
+	return (await getOwnerUserId()) === id;
 }
 
 // #endregion
@@ -110,7 +136,7 @@ export async function createUser(
 // not change password; admins create users so they need to set an initial password,
 // but changing passwords is a separate flow
 export async function setInitialPassword(userId: string, newPassword: string): Promise<void> {
-	const existing = await first<{ password_hash: Uint8Array | null }>(
+	const existing = await firstRow<{ password_hash: Uint8Array | null }>(
 		userId,
 		`SELECT password_hash FROM users WHERE id = ?`,
 		[userId]
@@ -139,16 +165,50 @@ export async function setInitialPassword(userId: string, newPassword: string): P
 	);
 }
 
+// overwrite an existing password (reset flow); unlike setInitialPassword there's no already-set guard
+export async function setUserPassword(userId: string, newPassword: string): Promise<void> {
+	const existing = await firstRow<{ id: string }>(userId, `SELECT id FROM users WHERE id = ?`, [
+		userId
+	]);
+	if (!existing) {
+		throw createError({ statusCode: 404, message: 'User not found' });
+	}
+
+	const { password_hash, password_salt, password_algorithm } = await hashPassword(newPassword);
+	await run(
+		userId,
+		`UPDATE users SET password_hash = ?, password_salt = ?, password_algorithm = ? WHERE id = ?`,
+		[password_hash, password_salt, password_algorithm, userId]
+	);
+}
+
 export async function patchUser(
 	user: User,
 	updates: Partial<Omit<User, 'id' | 'created_at' | 'updated_at'>>,
 	env: any
 ): Promise<User> {
 	const merged: User = { ...user, ...updates, updated_at: new Date() };
+
+	// a last name without a first name is dropped (display falls back cleanly)
+	if (!merged.first_name) merged.last_name = undefined;
+
+	// holding a permission implies its prerequisites; keep the stored set consistent
+	if (updates.permissions !== undefined) {
+		merged.permissions = expandPermissions(updates.permissions);
+	}
+
+	// the founding owner can never be demoted or lose permissions, however the patch arrives
+	if (await isOwnerUser(user.id)) {
+		merged.role = Role.Admin;
+		merged.permissions = DEFAULT_PERMISSIONS[Role.Admin];
+	}
+
 	const encrypted = await encrypt(
 		{
 			email: merged.email,
 			name: merged.name,
+			first_name: merged.first_name,
+			last_name: merged.last_name,
 			avatar_url: merged.avatar_url,
 			role: merged.role,
 			permissions: merged.permissions,
@@ -252,9 +312,11 @@ export async function getUserById(id: string, env: any): Promise<User | null> {
 	return await cache(
 		cacheKey,
 		async () => {
-			const user = await first<DBUser>(id, `SELECT ${USER_FETCH_COLUMNS} FROM users WHERE id = ?`, [
-				id
-			]);
+			const user = await firstRow<DBUser>(
+				id,
+				`SELECT ${USER_FETCH_COLUMNS} FROM users WHERE id = ?`,
+				[id]
+			);
 
 			if (!user) return null;
 			return await decryptUser(user, env.MASTER_KEY);
@@ -268,7 +330,7 @@ export async function getUserByUsername(username: string, env: any): Promise<Use
 	return await cache(
 		cacheKey,
 		async () => {
-			const user = await firstByLookupKey<DBUser>(
+			const user = await firstRowByLookup<DBUser>(
 				`username:${username}`,
 				`SELECT ${USER_FETCH_COLUMNS} FROM users WHERE username = ?`,
 				[username]
@@ -289,7 +351,7 @@ export async function getUserByEmail(email: string, env: any): Promise<User | nu
 	return await cache(
 		cacheKey,
 		async () => {
-			const user = await firstByLookupKey<DBUser>(
+			const user = await firstRowByLookup<DBUser>(
 				`email_lookup:${emailLookupHash}`,
 				`SELECT ${USER_FETCH_COLUMNS} FROM users WHERE email_lookup = ?`,
 				[emailLookupHash]
