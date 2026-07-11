@@ -1,4 +1,4 @@
-import { QueryResult } from '@earth-app/collegedb';
+import type { QueryResult } from '@earth-app/collegedb';
 import { argon2idAsync } from '@noble/hashes/argon2.js';
 import { scryptAsync } from '@noble/hashes/scrypt.js';
 import bcrypt from 'bcryptjs';
@@ -26,6 +26,8 @@ export function toUint8Array(value: unknown, field: string): Uint8Array {
 	if (ArrayBuffer.isView(value)) {
 		return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
 	}
+	// d1 returns blob columns as a plain number[] of byte values
+	if (Array.isArray(value)) return Uint8Array.from(value as number[]);
 
 	throw createError({
 		statusCode: 500,
