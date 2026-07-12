@@ -94,6 +94,7 @@ export default defineEventHandler(async (event) => {
 	// feature config blocks persisted verbatim as json (no secrets among these)
 	for (const key of [
 		'retention',
+		'audit',
 		'locking',
 		'automation',
 		'ai',
