@@ -10,6 +10,9 @@ dist
 package-lock.json
 .wrangler
 
+# typecheck (vue-tsc --build) incremental cache
+*.tsbuildinfo
+
 # Node dependencies
 node_modules
 
@@ -23,6 +26,8 @@ logs
 .idea
 .claude
 .env.local
+.dev.vars
+.dev.vars.*
 
 # Testing
 coverage/
