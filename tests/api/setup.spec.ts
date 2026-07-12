@@ -72,6 +72,34 @@ describe('POST /api/setup/init', () => {
 		await expect(handler(eventFor(runtime.env))).rejects.toBeTruthy();
 	});
 
+	// 8-char password clears every rule except the 12-char floor hashPassword enforces; it used
+	// to pass validation, then 500 in setInitialPassword after the admin row was already inserted
+	it('rejects a password shorter than 12 chars without leaving a half-created admin', async () => {
+		const runtime = getRuntime();
+		const handler = await importRoute('~/server/api/setup/init.post');
+
+		bindValidator({ ...goodBody, password: 'Abcd123!' });
+		await expect(handler(eventFor(runtime.env))).rejects.toBeTruthy();
+
+		const status = await importRoute('~/server/api/setup/status.get');
+		await expect(status(eventFor(runtime.env))).resolves.toMatchObject({
+			needsSetup: true,
+			userCount: 0
+		});
+	});
+
+	it('creates an admin whose password works for login', async () => {
+		const runtime = getRuntime();
+		const initHandler = await importRoute('~/server/api/setup/init.post');
+		mockBody(goodBody);
+		await initHandler(eventFor(runtime.env));
+
+		const loginHandler = await importRoute('~/server/api/users/login.post');
+		mockBody({ usernameOrEmail: goodBody.username, password: goodBody.password });
+		const result = (await loginHandler(eventFor(runtime.env))) as { success: boolean };
+		expect(result.success).toBe(true);
+	});
+
 	it('rejects a bad email', async () => {
 		const runtime = getRuntime();
 		const handler = await importRoute('~/server/api/setup/init.post');
@@ -94,5 +122,72 @@ describe('POST /api/setup/init', () => {
 		const email = await utils.getEmailSettings();
 		expect(email.transport).toBe('cloudflare');
 		expect(email.support_email).toBe('help@example.com');
+	});
+
+	it('persists inbound poll settings and seals the poll password', async () => {
+		const runtime = getRuntime();
+		const handler = await importRoute('~/server/api/setup/init.post');
+
+		mockBody({
+			...goodBody,
+			settings: {
+				email: {
+					transport: 'cloudflare',
+					support_email: 'help@example.com',
+					poll: {
+						enabled: true,
+						protocol: 'imap',
+						host: 'mail.example.com',
+						port: 993,
+						tls: 'implicit',
+						username: 'poller',
+						password: 'setup-poll-pass'
+					}
+				}
+			}
+		});
+		await handler(eventFor(runtime.env));
+
+		const utils = await import('#server-utils');
+		const email = await utils.getEmailSettings();
+		expect(email.poll?.enabled).toBe(true);
+		expect(email.poll?.protocol).toBe('imap');
+		expect((email.poll as { password?: string }).password).toBeUndefined();
+
+		const config = await utils.getInboundPollConfig(runtime.env);
+		expect(config?.connectOptions.auth.username).toBe('poller');
+		expect(config?.connectOptions.auth.password).toBe('setup-poll-pass');
+	});
+
+	it('links cloudflare when the wizard provides an account and token', async () => {
+		const runtime = getRuntime();
+		const handler = await importRoute('~/server/api/setup/init.post');
+
+		mockBody({
+			...goodBody,
+			settings: { cloudflare: { account_id: 'acct-9', token: 'secret-token-wxyz' } }
+		});
+		await handler(eventFor({ ...runtime.env, MOCK_CF: '1' }));
+
+		const utils = await import('#server-utils');
+		const cf = await utils.getCloudflareSettings();
+		expect(cf.account_id).toBe('acct-9');
+		expect(cf.token_last4).toBe('wxyz');
+	});
+
+	it('mirrors the support email into the canonical top-level supportEmail setting', async () => {
+		const runtime = getRuntime();
+		const handler = await importRoute('~/server/api/setup/init.post');
+
+		mockBody({
+			...goodBody,
+			settings: { email: { transport: 'cloudflare', support_email: 'help@corp.com' } }
+		});
+		await handler(eventFor(runtime.env));
+
+		const utils = await import('#server-utils');
+		const all = await utils.getAllSettings();
+		expect(all.supportEmail).toBe('help@corp.com');
+		expect((all.email as { support_email?: string }).support_email).toBe('help@corp.com');
 	});
 });

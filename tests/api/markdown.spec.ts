@@ -1,0 +1,48 @@
+import { describe, expect, it } from 'vitest';
+import { renderMarkdown } from '~/composables/useMarkdown';
+
+describe('renderMarkdown', () => {
+	it('renders bold and headings', () => {
+		expect(renderMarkdown('**bold**')).toContain('<strong>bold</strong>');
+		expect(renderMarkdown('_italic_')).toContain('<em>italic</em>');
+		expect(renderMarkdown('# Title')).toMatch(/<h1[^>]*>Title<\/h1>/);
+	});
+
+	it('highlights fenced code blocks', () => {
+		const out = renderMarkdown('```js\nconst x = 1\n```');
+		expect(out).toContain('<pre>');
+		expect(out).toContain('hljs');
+		expect(out).toContain('language-js');
+	});
+
+	it('expands :emoji: shortcodes and leaves unknown ones untouched', () => {
+		expect(renderMarkdown(':tada:')).toContain('🎉');
+		expect(renderMarkdown('great work :+1:')).toContain('👍');
+		expect(renderMarkdown(':definitely_not_an_emoji:')).toContain(':definitely_not_an_emoji:');
+	});
+
+	it('strips script tags from raw html', () => {
+		const out = renderMarkdown('hello\n\n<script>alert(1)</script>');
+		expect(out).not.toContain('<script');
+		expect(out).not.toContain('alert(1)');
+	});
+
+	it('strips inline event handlers', () => {
+		const out = renderMarkdown('<img src="x" onerror="alert(1)">');
+		expect(out.toLowerCase()).not.toContain('onerror');
+	});
+
+	it('strips javascript: hrefs', () => {
+		const out = renderMarkdown('[click](javascript:alert(1))');
+		expect(out.toLowerCase()).not.toContain('javascript:');
+	});
+
+	it('keeps safe https links', () => {
+		const out = renderMarkdown('[docs](https://example.com)');
+		expect(out).toContain('href="https://example.com"');
+	});
+
+	it('returns an empty string for empty input', () => {
+		expect(renderMarkdown('')).toBe('');
+	});
+});

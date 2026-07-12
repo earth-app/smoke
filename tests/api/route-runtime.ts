@@ -16,7 +16,13 @@ export const TEST_ENV = {
 	HMAC_SECRET: 'h'.repeat(32),
 	CF_API_TOKEN: 'cf-api-token',
 	SUPPORT_EMAIL: 'support@smoke.example.com',
-	NUXT_PUBLIC_SITE_URL: 'https://smoke.example.com'
+	NUXT_PUBLIC_SITE_URL: 'https://smoke.example.com',
+	// mock-cloudflare toggle (off by default); some specs override to '1'
+	MOCK_CF: '',
+	// primary db binding; ensureCollegeDB/ensureSchema read env.DB (resolved lazily to the run's db)
+	get DB() {
+		return runtime?.db;
+	}
 };
 
 export const MANAGER_PERMISSIONS: Permission[] = [
@@ -36,7 +42,10 @@ export const MANAGER_PERMISSIONS: Permission[] = [
 	Permission.ManageSelf,
 	Permission.ManageUsers,
 	Permission.ChangeUserLabels,
-	Permission.TogglePrivate
+	Permission.TogglePrivate,
+	Permission.ChangeAvatar,
+	Permission.ManageCustomers,
+	Permission.ViewAuditLog
 ];
 
 export const TABLES_SQL = [
@@ -96,7 +105,26 @@ export const TABLES_SQL = [
 		attachments_nonce BLOB,
 		attachments_tag BLOB,
 		attachments_algorithm TEXT,
-		attachments_version INTEGER
+		attachments_version INTEGER,
+		history_data BLOB,
+		history_wrapped_dek BLOB,
+		history_nonce BLOB,
+		history_tag BLOB,
+		history_algorithm TEXT,
+		history_version INTEGER
+	)`,
+	`CREATE TABLE IF NOT EXISTS audit_log (
+		id INTEGER PRIMARY KEY,
+		created_at INTEGER NOT NULL,
+		action TEXT NOT NULL,
+		actor_id TEXT,
+		actor_name TEXT,
+		target_type TEXT,
+		target_id TEXT,
+		ticket_id INTEGER,
+		priority TEXT,
+		summary TEXT,
+		context TEXT
 	)`
 ];
 
@@ -393,6 +421,7 @@ export async function seedTicket(
 		labels?: number[];
 		assignee_ids?: string[];
 		private?: boolean;
+		visibility?: import('~/shared/types/ticket').TicketVisibility;
 	}
 ): Promise<{ id: number }> {
 	const utils = await import('#server-utils');
@@ -405,7 +434,8 @@ export async function seedTicket(
 			priority: options.priority,
 			labels: options.labels,
 			assignee_ids: options.assignee_ids,
-			private: options.private
+			private: options.private,
+			visibility: options.visibility
 		},
 		rt.env
 	);

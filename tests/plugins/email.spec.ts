@@ -1,6 +1,11 @@
 import { send as edgeportSend } from 'edgeport/smtp';
 import { describe, expect, it, vi } from 'vitest';
+import { TicketVisibility } from '~/shared/types/ticket';
+import { Permission } from '~/shared/types/user';
 import { getRuntime } from '../api/route-runtime';
+
+// emailed tickets default to private now; list as a privileged viewer to see them in these specs
+const PRIV_VIEWER = { id: 'sys', permissions: [Permission.ViewPrivateTickets] } as any;
 
 // edgeport opens real TCP sockets; mock it so the outbound path is observable without a network
 vi.mock('edgeport/smtp', () => ({
@@ -85,7 +90,7 @@ describe('cloudflare:email plugin', () => {
 		expect(customer?.email).toBe('new@example.com');
 		expect(customer?.name).toBe('New User');
 
-		const tickets = await utils.listTickets(runtime.env, '', 1, 10, 0, 'id', 'asc', null);
+		const tickets = await utils.listTickets(runtime.env, '', 1, 10, 0, 'id', 'asc', PRIV_VIEWER);
 		expect(tickets).toHaveLength(1);
 		expect(tickets[0]?.title).toBe('Support needed');
 		expect(tickets[0]?.description).toBe('Please help me with account setup.');
@@ -113,7 +118,7 @@ describe('cloudflare:email plugin', () => {
 			context: {}
 		});
 
-		const tickets = await utils.listTickets(runtime.env, '', 1, 10, 0, 'id', 'asc', null);
+		const tickets = await utils.listTickets(runtime.env, '', 1, 10, 0, 'id', 'asc', PRIV_VIEWER);
 		expect(tickets).toHaveLength(1);
 		expect(tickets[0]?.customer_id).toBe(existing.id);
 	});
@@ -145,10 +150,10 @@ describe('cloudflare:email plugin', () => {
 			context: {}
 		});
 
-		const tickets = await utils.listTickets(runtime.env, '', 1, 10, 0, 'id', 'asc', null);
+		const tickets = await utils.listTickets(runtime.env, '', 1, 10, 0, 'id', 'asc', PRIV_VIEWER);
 		expect(tickets).toHaveLength(1);
 
-		const thread = await utils.getTicketThread(1, runtime.env);
+		const thread = await utils.getTicketThread(1, runtime.env, PRIV_VIEWER);
 		expect(thread.messages).toHaveLength(1);
 		expect(thread.messages[0]?.message).toBe('here is more detail');
 		expect(thread.messages[0]?.sender.kind).toBe('customer');
@@ -181,12 +186,49 @@ describe('cloudflare:email plugin', () => {
 			context: {}
 		});
 
-		const tickets = await utils.listTickets(runtime.env, '', 1, 10, 0, 'id', 'asc', null);
+		const tickets = await utils.listTickets(runtime.env, '', 1, 10, 0, 'id', 'asc', PRIV_VIEWER);
 		expect(tickets).toHaveLength(1);
 
-		const thread = await utils.getTicketThread(1, runtime.env);
+		const thread = await utils.getTicketThread(1, runtime.env, PRIV_VIEWER);
 		expect(thread.messages).toHaveLength(1);
 		expect(thread.messages[0]?.message).toBe('follow-up over email');
+	});
+
+	it('threads a reply via the References chain when alias + In-Reply-To are absent', async () => {
+		const runtime = getRuntime();
+		const handler = await loadEmailHandler();
+		const utils = await import('#server-utils');
+
+		await handler({
+			message: buildMessage({
+				from: 'refs@example.com',
+				subject: 'Need help',
+				messageId: '<orig-ref-1@example.com>',
+				body: 'initial'
+			}),
+			env: runtime.env,
+			context: {}
+		});
+
+		// reply carries only a References header pointing at the original message-id
+		await handler({
+			message: buildMessage({
+				from: 'refs@example.com',
+				subject: 'Re: Need help',
+				references: '<orig-ref-1@example.com>',
+				body: 'reply via references chain'
+			}),
+			env: runtime.env,
+			context: {}
+		});
+
+		const tickets = await utils.listTickets(runtime.env, '', 1, 10, 0, 'id', 'asc', PRIV_VIEWER);
+		expect(tickets).toHaveLength(1);
+
+		const thread = await utils.getTicketThread(1, runtime.env, PRIV_VIEWER);
+		expect(thread.messages).toHaveLength(1);
+		expect(thread.messages[0]?.message).toBe('reply via references chain');
+		expect(thread.messages[0]?.sender.kind).toBe('customer');
 	});
 
 	it('replies with a not-configured notice and creates nothing when secrets are missing', async () => {
@@ -203,7 +245,7 @@ describe('cloudflare:email plugin', () => {
 
 		expect(message.reply).toHaveBeenCalledTimes(1);
 
-		const tickets = await utils.listTickets(runtime.env, '', 1, 10, 0, 'id', 'asc', null);
+		const tickets = await utils.listTickets(runtime.env, '', 1, 10, 0, 'id', 'asc', PRIV_VIEWER);
 		expect(tickets).toHaveLength(0);
 		expect(await utils.getCustomerByEmail('someone@example.com', runtime.env)).toBeNull();
 	});
@@ -218,7 +260,7 @@ describe('cloudflare:email plugin', () => {
 		await handler({ message, env: runtime.env, context: {} });
 
 		expect(message.setReject).toHaveBeenCalledTimes(1);
-		const tickets = await utils.listTickets(runtime.env, '', 1, 10, 0, 'id', 'asc', null);
+		const tickets = await utils.listTickets(runtime.env, '', 1, 10, 0, 'id', 'asc', PRIV_VIEWER);
 		expect(tickets).toHaveLength(0);
 	});
 });
@@ -312,7 +354,8 @@ describe('sendTicketEmailReply (Email Service via edgeport)', () => {
 		expect(sendMock).not.toHaveBeenCalled();
 	});
 
-	it('does not send for a private ticket', async () => {
+	it('still mirrors on a private email thread (customer opened it by email)', async () => {
+		// privacy restricts staff visibility, not replies to the customer who started the thread
 		const runtime = getRuntime();
 		const utils = await import('#server-utils');
 		const sendMock = edgeportSend as unknown as ReturnType<typeof vi.fn>;
@@ -326,8 +369,122 @@ describe('sendTicketEmailReply (Email Service via edgeport)', () => {
 		);
 		await utils.initEmailThread(ticket.id, 'Private', email);
 
-		const sent = await utils.sendTicketEmailReply(ticket.id, 'internal note', runtime.env);
-		expect(sent).toBe(false);
-		expect(sendMock).not.toHaveBeenCalled();
+		const sent = await utils.sendTicketEmailReply(ticket.id, 'here is your answer', runtime.env);
+		expect(sent).toBe(true);
+		expect(sendMock).toHaveBeenCalledTimes(1);
+		expect(sendMock.mock.calls[0]![0].to).toBe(email);
+	});
+
+	it('auto-ccs participants (excluding the primary customer) on a reply', async () => {
+		const runtime = getRuntime();
+		const utils = await import('#server-utils');
+		const sendMock = edgeportSend as unknown as ReturnType<typeof vi.fn>;
+		sendMock.mockClear();
+
+		const email = 'primary@example.com';
+		const customer = await utils.createCustomer({ name: 'Primary', email }, runtime.env);
+		const ticket = await utils.createTicket(
+			{ title: 'CC thread', description: 'x', customer_id: customer.id },
+			runtime.env
+		);
+		await utils.initEmailThread(ticket.id, 'CC thread', email);
+		await utils.addTicketParticipant(ticket.id, 'watcher@example.com', runtime.env);
+
+		const sent = await utils.sendTicketEmailReply(ticket.id, 'reply body', runtime.env);
+		expect(sent).toBe(true);
+		const call = sendMock.mock.calls[sendMock.mock.calls.length - 1]![0];
+		expect(call.to).toBe(email);
+		expect(call.cc).toEqual(['watcher@example.com']);
+	});
+
+	it('still sends with no cc when the ticket has no participants', async () => {
+		const runtime = getRuntime();
+		const utils = await import('#server-utils');
+		const sendMock = edgeportSend as unknown as ReturnType<typeof vi.fn>;
+		sendMock.mockClear();
+
+		const email = 'solo@example.com';
+		const customer = await utils.createCustomer({ name: 'Solo', email }, runtime.env);
+		const ticket = await utils.createTicket(
+			{ title: 'Solo thread', description: 'x', customer_id: customer.id },
+			runtime.env
+		);
+		await utils.initEmailThread(ticket.id, 'Solo thread', email);
+
+		const sent = await utils.sendTicketEmailReply(ticket.id, 'reply body', runtime.env);
+		expect(sent).toBe(true);
+		const call = sendMock.mock.calls[sendMock.mock.calls.length - 1]![0];
+		expect(call.to).toBe(email);
+		expect(call.cc).toBeUndefined();
+	});
+});
+
+describe('inbound participant capture', () => {
+	it('parseInboundEmail exposes cc + recipients as normalized arrays', async () => {
+		const utils = await import('#server-utils');
+		const raw = [
+			'From: "Sender" <sender@example.com>',
+			'To: support@smoke.example.com, watcher@example.com',
+			'Cc: cc1@example.com, "CC Two" <CC2@Example.com>',
+			'Subject: Multi recipient',
+			'Content-Type: text/plain; charset=utf-8',
+			'',
+			'hello'
+		].join('\r\n');
+
+		const parsed = await utils.parseInboundEmail({
+			raw,
+			from: 'sender@example.com',
+			to: 'support@smoke.example.com',
+			headers: new Headers()
+		});
+		expect(parsed?.recipients).toEqual(
+			expect.arrayContaining(['support@smoke.example.com', 'watcher@example.com'])
+		);
+		expect(parsed?.cc).toEqual(expect.arrayContaining(['cc1@example.com', 'cc2@example.com']));
+	});
+
+	it('captureInboundParticipants adds cc/recipients but skips support, alias, from, and the customer', async () => {
+		const runtime = getRuntime();
+		const utils = await import('#server-utils');
+		const customer = await utils.createCustomer(
+			{ name: 'Cust', email: 'cust@example.com' },
+			runtime.env
+		);
+		const ticket = await utils.createTicket(
+			{
+				title: 'Cap',
+				description: 'x',
+				customer_id: customer.id,
+				visibility: TicketVisibility.Private
+			},
+			runtime.env
+		);
+
+		await utils.captureInboundParticipants(
+			ticket.id,
+			{
+				from: 'cust@example.com',
+				to: 'support@smoke.example.com',
+				recipients: [
+					'support@smoke.example.com',
+					`support+t${ticket.id}@smoke.example.com`,
+					'teammate@example.com'
+				],
+				cc: ['cust@example.com', 'watcher@example.com'],
+				subject: 'x',
+				references: [],
+				text: 'hi'
+			},
+			runtime.env
+		);
+
+		const participants = await utils.getTicketParticipants(ticket.id);
+		expect(participants).toEqual(
+			expect.arrayContaining(['teammate@example.com', 'watcher@example.com'])
+		);
+		expect(participants).not.toContain('support@smoke.example.com');
+		expect(participants).not.toContain('cust@example.com');
+		expect(participants.some((p: string) => p.includes('+t'))).toBe(false);
 	});
 });

@@ -31,9 +31,9 @@ export async function loginViaApi(
 	return body.session_token;
 }
 
-// drive the /login page in a real browser
+// drive the /login page in a real browser; keep an existing /login?redirect= url
 export async function loginUi(page: Page, creds: Creds = TEST_ADMIN): Promise<void> {
-	await page.goto('/login');
+	if (!page.url().includes('/login')) await page.goto('/login');
 	await page
 		.getByLabel(/username|email/i)
 		.first()

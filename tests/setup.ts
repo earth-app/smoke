@@ -24,6 +24,7 @@ const createHttpError: AnyFn = (input: {
 
 (globalThis as Record<string, unknown>).defineEventHandler = ((handler: AnyFn) => handler) as AnyFn;
 (globalThis as Record<string, unknown>).defineNitroPlugin = ((plugin: AnyFn) => plugin) as AnyFn;
+(globalThis as Record<string, unknown>).defineTask = ((task: unknown) => task) as AnyFn;
 (globalThis as Record<string, unknown>).createError = createHttpError;
 (globalThis as Record<string, unknown>).sendNoContent = vi.fn(() => null);
 (globalThis as Record<string, unknown>).readValidatedBody = vi.fn();

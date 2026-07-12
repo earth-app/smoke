@@ -18,16 +18,15 @@ test('submitting the public form yields a ticket id and a working track link', a
 	await page.goto('/submit', { waitUntil: 'domcontentloaded' });
 	await waitForHydration(page);
 
-	await page.getByRole('textbox', { name: /^email$/i }).fill(`public-${Date.now()}@smoke.test`);
-	await page.getByRole('textbox', { name: /^subject$/i }).fill('E2E public request');
-	await page
-		.getByRole('textbox', { name: /^description$/i })
-		.fill('submitted by the public e2e spec');
+	await page.getByLabel(/^email$/i).fill(`public-${Date.now()}@smoke.test`);
+	await page.getByLabel(/^subject$/i).fill('E2E public request');
+	await page.getByLabel(/^description$/i).fill('submitted by the public e2e spec');
 	await page.getByRole('button', { name: /submit request/i }).click();
 
-	// success card shows the ticket id and a track button
+	// success card shows the ticket id and a track button (scope to the card's own line: the
+	// "My Requests" list below also carries "#<id>" once a request has been tracked)
 	await expect(page.getByText(/request received/i)).toBeVisible({ timeout: 30_000 });
-	await expect(page.getByText(/#\d+/)).toBeVisible();
+	await expect(page.getByText(/your ticket id is #\d+/i)).toBeVisible();
 	const track = page.getByRole('link', { name: /track your request/i });
 	await expect(track).toBeVisible();
 
@@ -35,10 +34,12 @@ test('submitting the public form yields a ticket id and a working track link', a
 	await expect(page).toHaveURL(/\/status\//);
 	await waitForHydration(page);
 
-	// the status page renders the ticket heading and a status badge
+	// the status page renders the request-status header, the ticket title, and its id
 	await expect(page.getByRole('heading', { name: /request status/i })).toBeVisible();
-	await expect(page.getByText(/ticket #\d+/i)).toBeVisible({ timeout: 30_000 });
-	await expect(page.getByText(/\bopen\b/i).first()).toBeVisible();
+	await expect(page.getByRole('heading', { name: /e2e public request/i })).toBeVisible({
+		timeout: 30_000
+	});
+	await expect(page.getByText(/#\d+/).first()).toBeVisible();
 });
 
 test('an unknown status token shows the not-found card', async ({ page }) => {
