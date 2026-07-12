@@ -1,6 +1,6 @@
 <template>
 	<div
-		class="whitespace-pre-wrap break-words rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm leading-relaxed dark:border-slate-800 dark:bg-slate-900/60"
+		class="whitespace-pre-wrap wrap-break-word rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm leading-relaxed dark:border-slate-800 dark:bg-slate-900/60"
 	>
 		<template
 			v-for="(op, index) in ops"
@@ -8,7 +8,7 @@
 		>
 			<del
 				v-if="op.t === 'del'"
-				class="rounded bg-error/10 text-error no-underline line-through decoration-error/60"
+				class="rounded bg-error/10 text-error no-underline decoration-error/60"
 				>{{ op.v }}</del
 			>
 			<ins

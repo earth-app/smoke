@@ -120,7 +120,7 @@
 			<template v-else>
 				<p
 					v-if="compact"
-					class="mt-1 whitespace-pre-wrap break-words text-left text-sm text-slate-700 dark:text-slate-200"
+					class="mt-1 whitespace-pre-wrap wrap-break-word text-left text-sm text-slate-700 dark:text-slate-200"
 				>
 					{{ message.message }}
 				</p>
