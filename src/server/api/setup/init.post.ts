@@ -25,13 +25,19 @@ const stringSettingKeys = [
 	'github',
 	'twitter',
 	'discord',
-	'linkedin'
+	'linkedin',
+	'instagram',
+	'patreon'
 ] as const;
 
 const bodySchema = z.object({
 	username: schemas.username,
 	email: schemas.email,
 	password: schemas.passwordParam,
+	// optional admin avatar: an https url or an `icon:<name>` sentinel
+	adminAvatar: z.string().max(256).optional(),
+	firstName: z.string().max(64).optional(),
+	lastName: z.string().max(64).optional(),
 	settings: z
 		.object({
 			email: emailSettings,
@@ -65,26 +71,121 @@ export default defineEventHandler(async (event) => {
 	const body = await readValidatedBody(event, bodySchema.parse);
 
 	const { id, sessionToken } = await createUser(body.username, body.email, Role.Admin, env);
-	await setInitialPassword(id, body.password);
 
-	const settings = body.settings;
-	if (settings) {
-		if (settings.email) {
-			// seal a custom smtp password out of the public email blob before persisting
-			const email = { ...(settings.email as Record<string, any>) };
-			const smtp = email.smtp as Record<string, any> | undefined;
-			if (smtp?.password) {
-				const sealed = await sealSecret(String(smtp.password), env.MASTER_KEY);
-				await kv.set('smoke:setting:email_smtp_password', JSON.stringify(sealed));
-				email.smtp = { ...smtp };
-				delete email.smtp.password;
+	// setting the password is the one non-recoverable step; if it throws, roll the admin back
+	// so setup can be retried cleanly instead of bricking on the 409-already-exists path
+	try {
+		await setInitialPassword(id, body.password);
+	} catch (error) {
+		await deleteUser(id).catch(() => {});
+		throw error;
+	}
+
+	// mark this account as the founding owner; its role + permissions are permanently locked
+	await setOwnerUserId(id).catch(() => {});
+
+	// optional real name for the admin (first name required if a last name is given)
+	if (typeof body.firstName === 'string' && body.firstName.trim()) {
+		try {
+			const created = await getUserById(id, env);
+			if (created) {
+				await patchUser(
+					created,
+					{
+						first_name: body.firstName.trim(),
+						last_name:
+							typeof body.lastName === 'string' && body.lastName.trim()
+								? body.lastName.trim()
+								: undefined
+					},
+					env
+				);
 			}
-			await setJsonSetting('email', email);
+		} catch (error) {
+			console.warn('setup: failed to set admin name', error);
 		}
-		if (settings.branding) await setJsonSetting('branding', settings.branding);
-		for (const key of stringSettingKeys) {
-			const value = settings[key];
-			if (typeof value === 'string') await setStringSetting(key, value);
+	}
+
+	// optional settings; a failure here leaves a valid, loginable admin, so don't undo it
+	try {
+		const settings = body.settings;
+		if (settings) {
+			if (settings.email) {
+				// seal a custom smtp password out of the public email blob before persisting
+				const email = { ...(settings.email as Record<string, any>) };
+				const smtp = email.smtp as Record<string, any> | undefined;
+				if (smtp?.password) {
+					const sealed = await sealSecret(String(smtp.password), env.MASTER_KEY);
+					await kv.set('smoke:setting:email_smtp_password', JSON.stringify(sealed));
+					email.smtp = { ...smtp };
+					delete email.smtp.password;
+				}
+				// seal the inbound poll password the same way before persisting the poll config
+				const poll = email.poll as Record<string, any> | undefined;
+				if (poll) {
+					if (poll.password) {
+						await sealEmailPollPassword(String(poll.password), env.MASTER_KEY);
+					}
+					email.poll = { ...poll };
+					delete email.poll.password;
+				}
+				await setJsonSetting('email', email);
+				// mirror the support address into the canonical top-level setting so every
+				// consumer (settings page, channel status, cf provisioning) reads it consistently
+				const support = typeof email.support_email === 'string' ? email.support_email.trim() : '';
+				if (support && typeof settings.supportEmail !== 'string') {
+					await setStringSetting('supportEmail', support);
+				}
+			}
+			if (settings.branding) await setJsonSetting('branding', settings.branding);
+			for (const key of stringSettingKeys) {
+				const value = settings[key];
+				if (typeof value === 'string') await setStringSetting(key, value);
+			}
+
+			// feature config blocks from the wizard (no secrets among these)
+			for (const key of [
+				'retention',
+				'locking',
+				'automation',
+				'ai',
+				'role_icons',
+				'role_colors',
+				'avatars'
+			] as const) {
+				const value = (settings as Record<string, any>)[key];
+				if (value && typeof value === 'object') await setJsonSetting(key, value);
+			}
+
+			// optional cloudflare link from the wizard; seal the token like the link route does
+			const cf = (settings as Record<string, any>).cloudflare;
+			if (cf && typeof cf === 'object' && cf.account_id && cf.token) {
+				setMockCf(isMockCf(env));
+				try {
+					await verifyToken(String(cf.token));
+					const sealed = await sealSecret(String(cf.token), env.MASTER_KEY);
+					await kv.set('smoke:setting:cloudflare_token', JSON.stringify(sealed));
+					await setJsonSetting('cloudflare', {
+						account_id: String(cf.account_id),
+						token_last4: last4(String(cf.token)),
+						scopes: await getTokenScopes(String(cf.token))
+					});
+				} catch (cfError) {
+					console.warn('setup: cloudflare link failed', cfError);
+				}
+			}
+		}
+	} catch (error) {
+		console.warn('setup: failed to persist optional settings', error);
+	}
+
+	// optional admin avatar (icon: sentinel or https url); a failure leaves a valid admin
+	if (typeof body.adminAvatar === 'string' && body.adminAvatar.trim()) {
+		try {
+			const created = await getUserById(id, env);
+			if (created) await patchUser(created, { avatar_url: body.adminAvatar.trim() }, env);
+		} catch (error) {
+			console.warn('setup: failed to set admin avatar', error);
 		}
 	}
 
