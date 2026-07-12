@@ -3,7 +3,7 @@ import * as schemas from '~/shared/utils/schemas';
 
 export default defineEventHandler(async (event) => {
 	const current = await ensureLoggedIn(event);
-	if (!current.permissions.includes(Permission.ManageTicket)) {
+	if (!current.permissions.includes(Permission.ManageCustomers)) {
 		throw createError({
 			statusCode: 403,
 			message: 'You do not have permission to perform this action'
@@ -13,7 +13,12 @@ export default defineEventHandler(async (event) => {
 	const body = await readValidatedBody(event, schemas.customerCreateBody.parse);
 
 	try {
-		return await createCustomer(body, event.context.cloudflare.env);
+		// createCustomer records the customer.created audit row with this actor
+		return await createCustomer(
+			body as Parameters<typeof createCustomer>[0],
+			event.context.cloudflare.env,
+			{ id: current.id, name: current.name || current.username }
+		);
 	} catch (error) {
 		if (typeof error === 'object' && error !== null && 'statusCode' in error) {
 			throw error;
