@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import type {
 	Ticket,
 	TicketCreateInput,
+	TicketEvent,
 	TicketMessage,
 	TicketPatchInput,
 	TicketThread
@@ -13,6 +14,7 @@ type PostMessageBody = {
 	reply_to?: number;
 	attachments?: unknown[];
 	identity?: 'self' | 'team';
+	cc?: string[];
 };
 
 export const useTicketStore = defineStore('ticket', () => {
@@ -99,8 +101,8 @@ export const useTicketStore = defineStore('ticket', () => {
 
 		const promise = (async () => {
 			try {
-				// the api exposes the ticket and its messages separately; assemble the thread here
-				const [ticket, messages] = await Promise.all([
+				// the api exposes ticket, messages, and the timeline separately; assemble the thread here
+				const [ticket, messages, eventsRes] = await Promise.all([
 					$fetch<Ticket>(`/api/tickets/${id}`, {
 						cache: 'no-store',
 						credentials: 'include',
@@ -110,7 +112,13 @@ export const useTicketStore = defineStore('ticket', () => {
 						cache: 'no-store',
 						credentials: 'include',
 						headers: authHeaders()
-					})
+					}),
+					// timeline is best-effort; a missing/older route must not break the thread
+					$fetch<{ events: TicketEvent[] }>(`/api/tickets/${id}/events`, {
+						cache: 'no-store',
+						credentials: 'include',
+						headers: authHeaders()
+					}).catch(() => ({ events: [] as TicketEvent[] }))
 				]);
 
 				set(ticket);
@@ -125,7 +133,12 @@ export const useTicketStore = defineStore('ticket', () => {
 					users.push(message.sender);
 				}
 
-				const thread: TicketThread = { ticket, messages, users };
+				const thread: TicketThread = {
+					ticket,
+					messages,
+					users,
+					events: eventsRes?.events ?? []
+				};
 				threads.set(id, thread);
 				return thread;
 			} catch (error) {
@@ -204,6 +217,40 @@ export const useTicketStore = defineStore('ticket', () => {
 		}
 	};
 
+	// participant emails (cc/forwarded) that gain ui access to this ticket
+	const addEmail = async (id: number, email: string, note?: string) => {
+		try {
+			const result = await $fetch(`/api/tickets/${id}/emails`, {
+				method: 'POST',
+				body: { email, ...(note ? { note } : {}) },
+				credentials: 'include',
+				headers: authHeaders()
+			});
+			// refetch so the new participant + system note show up
+			await fetchThread(id, true);
+			return result;
+		} catch (error) {
+			console.error(`Failed to add email to ticket "${id}":`, error);
+			throw error;
+		}
+	};
+
+	const removeEmail = async (id: number, email: string) => {
+		try {
+			const result = await $fetch(`/api/tickets/${id}/emails`, {
+				method: 'DELETE',
+				body: { email },
+				credentials: 'include',
+				headers: authHeaders()
+			});
+			await fetchThread(id, true);
+			return result;
+		} catch (error) {
+			console.error(`Failed to remove email from ticket "${id}":`, error);
+			throw error;
+		}
+	};
+
 	return {
 		cache,
 		threads,
@@ -215,6 +262,8 @@ export const useTicketStore = defineStore('ticket', () => {
 		createTicket,
 		patchTicket,
 		deleteTicket,
-		postMessage
+		postMessage,
+		addEmail,
+		removeEmail
 	};
 });
