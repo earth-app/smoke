@@ -52,6 +52,8 @@ export type Ticket = {
 	// soft-archived by retention; hidden from default lists but still viewable
 	archived?: boolean;
 	archived_at?: Date | null;
+	// extra emails (cc'd / forwarded) granted view+reply access to this ticket; normalized lowercase
+	participants?: string[];
 	assignees: User[];
 	created_at: Date;
 	updated_at: Date;
@@ -209,6 +211,52 @@ export type TicketActor =
 			avatar_url?: string;
 	  };
 
+// github-issue-style timeline event interleaved with messages in the thread (kept in kv, not the
+// encrypted messages array, so it never perturbs the message id===index invariant)
+export type TicketEventKind =
+	| 'created'
+	| 'renamed'
+	| 'status'
+	| 'priority'
+	| 'visibility'
+	| 'deadline'
+	| 'color'
+	| 'icon'
+	| 'label_added'
+	| 'label_removed'
+	| 'assignee_added'
+	| 'assignee_removed'
+	| 'project_added'
+	| 'project_removed'
+	| 'locked'
+	| 'unlocked'
+	| 'archived'
+	| 'unarchived'
+	| 'closed'
+	| 'reopened'
+	| 'customer_changed';
+
+export type TicketEvent = {
+	id: string;
+	kind: TicketEventKind;
+	actor?: TicketActor;
+	from?: string;
+	to?: string;
+	// a human label for the changed entity (a label name, assignee name, project name)
+	label?: string;
+	// set when a flow automated this change so the ui can render "by <flow name>"
+	flow_id?: number;
+	flow_name?: string;
+	created_at: Date;
+};
+
+// a prior version of a message body, newest-last, surfaced for edit-history diffing
+export type TicketMessageVersion = {
+	message: string;
+	edited_at: Date;
+	edited_by?: string | null;
+};
+
 export type TicketAttachment = {
 	id: number;
 	ticket_id: number;
@@ -268,12 +316,16 @@ export type TicketMeta = {
 	archived?: boolean;
 	archived_at?: string | null;
 	created_by?: string | null;
+	// normalized lowercase emails granted access to this ticket (cc'd / forwarded participants)
+	participants?: string[];
 };
 
 export type TicketThread = {
 	ticket: Ticket;
 	messages: TicketMessage[];
 	users: Array<User | TicketActor>;
+	// timeline events (renames/field changes/etc), interleaved with messages by created_at on the client
+	events?: TicketEvent[];
 };
 
 export type TicketMessage = {
@@ -290,4 +342,6 @@ export type TicketMessage = {
 	// edits their own); drives the "edited by <name>" marker in the thread
 	edited_by?: string | null;
 	attachments?: TicketAttachment[];
+	// prior versions (newest-last) for the edit-history diff view; absent when never edited
+	edit_history?: TicketMessageVersion[];
 };
