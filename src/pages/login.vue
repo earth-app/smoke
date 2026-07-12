@@ -51,6 +51,15 @@
 			>
 				Sign In
 			</UButton>
+
+			<div class="text-center text-sm">
+				<ULink
+					to="/reset-password"
+					class="text-muted hover:text-default"
+				>
+					Forgot Password?
+				</ULink>
+			</div>
 		</UForm>
 	</div>
 </template>
@@ -99,5 +108,5 @@ async function onSubmit(event: FormSubmitEvent<LoginState>) {
 	}
 }
 
-useSeoMeta({ title: 'Staff Login' });
+useSeoMeta({ title: 'Staff Login', robots: 'noindex, nofollow' });
 </script>
