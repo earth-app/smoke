@@ -6,7 +6,9 @@
 			tabindex="-1"
 			class="w-full flex-1 focus:outline-none"
 		>
-			<slot />
+			<PageContextMenu>
+				<slot />
+			</PageContextMenu>
 		</main>
 		<Footer />
 	</div>
