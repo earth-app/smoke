@@ -14,6 +14,10 @@ export function useSettings() {
 		return await settingsStore.save(partial);
 	};
 
+	const saveEmail = async (partial: Record<string, any>) => {
+		return await settingsStore.saveEmail(partial);
+	};
+
 	const sendTestEmail = async (to: string) => {
 		return await settingsStore.sendTestEmail(to);
 	};
@@ -25,6 +29,7 @@ export function useSettings() {
 		settings,
 		fetchSettings,
 		save,
+		saveEmail,
 		sendTestEmail
 	};
 }
