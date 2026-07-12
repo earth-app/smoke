@@ -1,7 +1,7 @@
 import { ensureCollegeDB } from 'hub:db:schema';
 
 // scheduled inbound poll; no-ops unless a mailbox is configured + enabled in settings.
-// secrets come from process.env (text bindings under nodejs_compat); db/kv are hub bindings
+// creds resolve sealed-kv-first (settings) then these env vars as a fallback; db/kv are hub bindings
 export default defineTask({
 	meta: {
 		name: 'email:poll',
