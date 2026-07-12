@@ -90,25 +90,28 @@
 				@submit.prevent="submitProvision"
 			>
 				<UFormField
-					label="Zone ID"
+					label="Zone"
 					size="sm"
 					class="min-w-40 flex-1"
 				>
-					<UInput
+					<USelect
 						v-model="zoneId"
-						placeholder="Zone ID"
+						:items="zoneOptions"
+						placeholder="Select a zone"
 						class="w-full"
 					/>
 				</UFormField>
 				<UFormField
-					label="Worker Name"
+					label="Worker"
 					size="sm"
 					class="min-w-40 flex-1"
 				>
-					<UInput
+					<USelectMenu
 						v-model="workerName"
-						placeholder="smoke-support"
+						:items="workerOptions"
+						create-item
 						class="w-full"
+						@create="onCreateWorker"
 					/>
 				</UFormField>
 				<UButton
@@ -137,12 +140,13 @@
 
 <script setup lang="ts">
 const toast = useToast();
-const { status, isLinked, link, provision, unlink } = useCloudflare();
+const { status, isLinked, link, provision, unlink, zones, workers, fetchWorkers } = useCloudflare();
 
 const accountId = ref('');
 const token = ref('');
 const zoneId = ref('');
-const workerName = ref('');
+const workerName = ref('smoke');
+const manualWorkers = ref<string[]>([]);
 
 const linking = ref(false);
 const provisioning = ref(false);
@@ -152,6 +156,33 @@ watch(status, (value) => {
 	if (value?.zone_id) zoneId.value = value.zone_id;
 	if (value?.worker_name) workerName.value = value.worker_name;
 });
+
+// load worker scripts once an account is linked
+watch(
+	isLinked,
+	(linked) => {
+		if (linked) fetchWorkers();
+	},
+	{ immediate: true }
+);
+
+const zoneOptions = computed(() =>
+	(zones.value ?? []).map((z) => ({ label: `${z.name} (${z.id})`, value: z.id }))
+);
+
+const workerOptions = computed(() => {
+	const names = new Set<string>(['smoke']);
+	for (const w of workers.value ?? []) if (w?.name) names.add(w.name);
+	for (const name of manualWorkers.value) if (name) names.add(name);
+	return [...names];
+});
+
+function onCreateWorker(name: string) {
+	const value = name.trim();
+	if (!value) return;
+	if (!manualWorkers.value.includes(value)) manualWorkers.value.push(value);
+	workerName.value = value;
+}
 
 const checklist = computed(() => [
 	{
@@ -165,8 +196,8 @@ const checklist = computed(() => [
 		detail: status.value?.zone_id
 	},
 	{
-		label: 'Worker Provisioned',
-		ok: !!status.value?.provisioned,
+		label: 'Worker Wired',
+		ok: !!status.value?.checklist?.worker_wired,
 		detail: status.value?.worker_name
 	}
 ]);
@@ -183,10 +214,10 @@ async function submitLink() {
 			color: 'success',
 			duration: 3000
 		});
-	} catch {
+	} catch (error) {
 		toast.add({
 			title: 'Failed to Link Account',
-			description: 'Check the account ID and token, then try again.',
+			description: extractServerMessage(error, 'Check the account ID and token, then try again.'),
 			icon: 'mdi:alert-circle',
 			color: 'error',
 			duration: 4000
@@ -210,10 +241,10 @@ async function submitProvision() {
 			color: 'success',
 			duration: 3000
 		});
-	} catch {
+	} catch (error) {
 		toast.add({
 			title: 'Failed to Provision',
-			description: 'Could not provision the worker. Please try again.',
+			description: extractServerMessage(error, 'Could not provision the worker. Please try again.'),
 			icon: 'mdi:alert-circle',
 			color: 'error',
 			duration: 4000
@@ -237,10 +268,10 @@ async function submitUnlink() {
 			color: 'success',
 			duration: 3000
 		});
-	} catch {
+	} catch (error) {
 		toast.add({
 			title: 'Failed to Unlink',
-			description: 'Could not unlink the account. Please try again.',
+			description: extractServerMessage(error, 'Could not unlink the account. Please try again.'),
 			icon: 'mdi:alert-circle',
 			color: 'error',
 			duration: 4000
