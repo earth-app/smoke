@@ -1,17 +1,9 @@
 // optional inbound poll for self-hosters not on cloudflare email routing (imap/pop3)
 export async function pollInboundMailbox(env: any): Promise<{ processed: number }> {
-	const email = await getEmailSettings();
-	if (!email.poll?.enabled) return { processed: 0 };
+	const config = await getInboundPollConfig(env);
+	if (!config) return { processed: 0 };
 
-	const protocol = email.poll.protocol ?? 'imap';
-	const connectOptions = {
-		hostname: email.poll.host,
-		port: email.poll.port,
-		tls: email.poll.tls ?? 'implicit',
-		auth: { username: env.POLL_USER, password: env.POLL_PASS }
-	};
-
-	const support = email.support_email ?? env.SUPPORT_EMAIL;
+	const { protocol, connectOptions, support } = config;
 	let processed = 0;
 
 	// lazy-import edgeport so the #server-utils test barrel never pulls cloudflare:sockets
@@ -59,12 +51,32 @@ export async function pollInboundMailbox(env: any): Promise<{ processed: number 
 	return { processed };
 }
 
+// pull the recipient from the raw To header so reply aliases (support+t<id>@) thread on poll;
+// polled mail has no envelope recipient, so the base support address is the fallback
+function extractRecipient(raw: Uint8Array | string, fallback: string): string {
+	const text = typeof raw === 'string' ? raw : new TextDecoder().decode(raw);
+	const match = text.match(/^to:[ \t]*(.*)$/im);
+	if (!match) return fallback;
+	const value = match[1] ?? '';
+	const addr = value.match(/<([^>]+)>/)?.[1] ?? value;
+	return addr.trim() || fallback;
+}
+
 // parse one raw rfc822 message and thread it into a ticket; returns true when handled
-async function handleRawMessage(raw: Uint8Array, support: string, env: any): Promise<boolean> {
+async function handleRawMessage(
+	raw: Uint8Array | string,
+	support: string,
+	env: any
+): Promise<boolean> {
+	// loop guard: skip our own outbound if the polled mailbox also receives sent copies
+	const text = typeof raw === 'string' ? raw : new TextDecoder().decode(raw);
+	const head = text.split(/\r?\n\r?\n/)[0] ?? '';
+	if (new RegExp(`^${OUTBOUND_MARKER_HEADER}:`, 'im').test(head)) return false;
+
 	const parsed = await parseInboundEmail({
 		raw,
 		from: '',
-		to: support,
+		to: extractRecipient(raw, support),
 		headers: new Headers()
 	});
 	if (!parsed?.from) return false;
@@ -99,7 +111,12 @@ async function handleRawMessage(raw: Uint8Array, support: string, env: any): Pro
 		);
 	} else {
 		const ticket = await createTicket(
-			{ title: parsed.subject, description: parsed.text, customer_id: customer.id },
+			{
+				title: parsed.subject,
+				description: parsed.text,
+				customer_id: customer.id,
+				source: 'emailed'
+			},
 			env
 		);
 		ticketId = ticket.id;
@@ -108,6 +125,7 @@ async function handleRawMessage(raw: Uint8Array, support: string, env: any): Pro
 
 	if (parsed.messageId) await indexMessageId(parsed.messageId, ticketId);
 	await recordInboundOnThread(ticketId, parsed);
+	await captureInboundParticipants(ticketId, parsed, env);
 
 	return true;
 }
