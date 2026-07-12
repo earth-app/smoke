@@ -13,7 +13,11 @@
 					variant="ghost"
 					:icon="collapsed ? 'mdi:menu' : 'mdi:backburger'"
 					:aria-label="collapsed ? 'Expand Sidebar' : 'Collapse Sidebar'"
-					@click="collapsed = !collapsed"
+					@click="
+						() => {
+							collapsed = !collapsed;
+						}
+					"
 				/>
 				<div class="ml-auto flex items-center gap-3">
 					<UDropdownMenu
@@ -25,9 +29,11 @@
 							variant="ghost"
 							class="gap-2"
 						>
-							<UAvatar
-								:src="user?.avatar_url"
-								:alt="user?.username"
+							<Avatar
+								:avatar="user?.avatar_url"
+								:id="user?.id"
+								:name="user?.username"
+								:role="user?.role"
 								size="sm"
 							/>
 							<span class="hidden text-sm font-medium sm:inline">{{
@@ -42,7 +48,9 @@
 				tabindex="-1"
 				class="min-w-0 flex-1 p-4 focus:outline-none sm:p-6"
 			>
-				<slot />
+				<PageContextMenu>
+					<slot />
+				</PageContextMenu>
 			</main>
 		</div>
 	</div>
