@@ -25,6 +25,8 @@ export type User = {
 	avatar_url?: string;
 	role: Role;
 	permissions: Permission[];
+	// set by /api/users/[id] for the founding owner (a locked admin); drives owner role-context in the ui
+	is_owner?: boolean;
 	created_at: Date;
 	updated_at: Date;
 	labels: Label[];
@@ -51,6 +53,7 @@ export enum Permission {
 	// customer permissions
 	ChangeCustomerName = 'change_customer_name',
 	ChangeCustomerTags = 'change_customer_tags',
+	ManageCustomers = 'manage_customers',
 	// user permissions
 	ManageSelf = 'manage_self',
 	ManageUsers = 'manage_users',
@@ -58,7 +61,8 @@ export enum Permission {
 	ChangeAvatar = 'change_avatar',
 	// admin permissions
 	ManageSettings = 'manage_settings',
-	ToggleMaintenance = 'manage_maintenance'
+	ToggleMaintenance = 'manage_maintenance',
+	ViewAuditLog = 'view_audit_log'
 }
 
 export type PermissionData = {
@@ -147,6 +151,10 @@ export const ALL_PERMISSIONS: Record<Permission, PermissionData> = {
 		description: "Allows the user to change a customer's tags.",
 		category: 'customers'
 	},
+	[Permission.ManageCustomers]: {
+		description: 'Allows the user to create customers and issue portal access links.',
+		category: 'customers'
+	},
 	// users
 	[Permission.ManageSelf]: {
 		description: 'Allows the user to manage their own account.',
@@ -171,6 +179,10 @@ export const ALL_PERMISSIONS: Record<Permission, PermissionData> = {
 	},
 	[Permission.ToggleMaintenance]: {
 		description: 'Allows the user to toggle maintenance mode.',
+		category: 'admin'
+	},
+	[Permission.ViewAuditLog]: {
+		description: 'Allows the user to view the audit log.',
 		category: 'admin'
 	}
 };
@@ -205,13 +217,15 @@ export const DEFAULT_PERMISSIONS: Record<Role, Permission[]> = {
 		Permission.RemoveEmail,
 		Permission.ChangeCustomerName,
 		Permission.ChangeCustomerTags,
+		Permission.ManageCustomers,
 		Permission.ManageSelf,
 		Permission.ManageUsers,
 		Permission.ChangeUserLabels,
 		Permission.TogglePrivate,
 		Permission.LockThread,
 		Permission.ChatInLocked,
-		Permission.ChangeAvatar
+		Permission.ChangeAvatar,
+		Permission.ViewAuditLog
 	],
 	[Role.Admin]: Object.values(Permission)
 };
