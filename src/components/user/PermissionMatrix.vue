@@ -11,7 +11,11 @@
 					:disabled="!editable"
 					class="w-40"
 					@update:model-value="(v) => $emit('update:role', v as Role)"
-				/>
+				>
+					<template #leading>
+						<UIcon :name="roleIconMap[role]" />
+					</template>
+				</USelect>
 			</UFormField>
 			<p class="text-sm text-slate-500">
 				{{ selectedCount }} of {{ totalCount }} permissions granted
@@ -34,11 +38,35 @@
 					:key="entry.permission"
 					class="flex items-center justify-between gap-3 px-4 py-2.5"
 				>
-					<div class="min-w-0">
+					<div
+						class="min-w-0"
+						:class="{ 'opacity-60': missingPrereqs(entry.permission).length }"
+					>
 						<p class="text-sm font-medium">{{ permissionLabel(entry.permission) }}</p>
 						<p class="text-xs text-slate-500">{{ entry.data.description }}</p>
+						<p
+							v-if="missingPrereqs(entry.permission).length"
+							class="mt-0.5 flex items-center gap-1 text-xs text-warning"
+						>
+							<UIcon
+								name="mdi:lock-outline"
+								class="size-3.5 shrink-0"
+							/>
+							<span>{{ requiresLabel(entry.permission) }}</span>
+						</p>
 					</div>
+					<UTooltip
+						v-if="missingPrereqs(entry.permission).length"
+						:text="requiresLabel(entry.permission)"
+					>
+						<USwitch
+							:model-value="selected.has(entry.permission)"
+							:disabled="!editable"
+							@update:model-value="(v) => toggle(entry.permission, Boolean(v))"
+						/>
+					</UTooltip>
 					<USwitch
+						v-else
 						:model-value="selected.has(entry.permission)"
 						:disabled="!editable"
 						@update:model-value="(v) => toggle(entry.permission, Boolean(v))"
@@ -51,7 +79,14 @@
 
 <script setup lang="ts">
 import type { PermissionData } from '~/shared/types/user';
-import { ALL_PERMISSIONS, ALL_ROLES, Permission, Role } from '~/shared/types/user';
+import {
+	ALL_PERMISSIONS,
+	ALL_ROLES,
+	expandPermissions,
+	Permission,
+	PERMISSION_REQUIRES,
+	Role
+} from '~/shared/types/user';
 
 const props = withDefaults(
 	defineProps<{ modelValue: Permission[]; role: Role; editable?: boolean }>(),
@@ -67,9 +102,16 @@ const selected = computed(() => new Set(props.modelValue));
 const totalCount = Object.keys(ALL_PERMISSIONS).length;
 const selectedCount = computed(() => props.modelValue.length);
 
+const roleIconMap: Record<Role, string> = {
+	[Role.Agent]: 'mdi:account-outline',
+	[Role.Manager]: 'mdi:account-tie-outline',
+	[Role.Admin]: 'mdi:shield-crown-outline'
+};
+
 const roleItems = ALL_ROLES.map((value) => ({
 	label: value.charAt(0).toUpperCase() + value.slice(1),
-	value
+	value,
+	icon: roleIconMap[value]
 }));
 
 type Entry = { permission: Permission; data: PermissionData };
@@ -87,11 +129,41 @@ const groups = computed<Group[]>(() => {
 	return Array.from(map.entries()).map(([category, entries]) => ({ category, entries }));
 });
 
+// direct prerequisites of a permission that are not currently granted
+function missingPrereqs(permission: Permission): Permission[] {
+	return (PERMISSION_REQUIRES[permission] ?? []).filter((dep) => !selected.value.has(dep));
+}
+
+function requiresLabel(permission: Permission): string {
+	const names = (PERMISSION_REQUIRES[permission] ?? []).map(permissionLabel);
+	return `Requires ${names.join(', ')}`;
+}
+
+// drop any permission whose prerequisites are no longer all present (cascades)
+function pruneUnsatisfied(perms: Set<Permission>): Permission[] {
+	let changed = true;
+	while (changed) {
+		changed = false;
+		for (const p of [...perms]) {
+			if ((PERMISSION_REQUIRES[p] ?? []).some((dep) => !perms.has(dep))) {
+				perms.delete(p);
+				changed = true;
+			}
+		}
+	}
+	return [...perms];
+}
+
 function toggle(permission: Permission, value: boolean) {
+	if (value) {
+		// enabling pulls in every transitive prerequisite so the set stays consistent
+		emit('update:modelValue', expandPermissions([...props.modelValue, permission]));
+		return;
+	}
+	// disabling also drops dependents that would be left without this prerequisite
 	const next = new Set(props.modelValue);
-	if (value) next.add(permission);
-	else next.delete(permission);
-	emit('update:modelValue', Array.from(next));
+	next.delete(permission);
+	emit('update:modelValue', pruneUnsatisfied(next));
 }
 
 function permissionLabel(permission: Permission): string {

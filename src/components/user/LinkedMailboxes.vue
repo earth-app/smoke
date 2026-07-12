@@ -49,15 +49,17 @@
 					class="size-4 text-slate-400"
 				/>
 				<span class="flex-1 truncate text-sm">{{ email }}</span>
-				<UButton
-					size="xs"
-					color="error"
-					variant="ghost"
-					icon="mdi:link-off"
-					:loading="removing === email"
-					@click="remove(email)"
-					>Unlink</UButton
-				>
+				<UTooltip text="Unlink Mailbox">
+					<UButton
+						size="xs"
+						color="error"
+						variant="ghost"
+						icon="mdi:link-off"
+						aria-label="Unlink Mailbox"
+						:loading="removing === email"
+						@click="remove(email)"
+					/>
+				</UTooltip>
 			</div>
 		</div>
 		<p
@@ -117,10 +119,10 @@ async function add() {
 			color: 'success',
 			duration: 3000
 		});
-	} catch {
+	} catch (error) {
 		toast.add({
 			title: 'Failed to Link Mailbox',
-			description: 'Could not link the mailbox. Please try again.',
+			description: extractServerMessage(error, 'Could not link the mailbox. Please try again.'),
 			icon: 'mdi:alert-circle',
 			color: 'error',
 			duration: 4000
@@ -147,10 +149,10 @@ async function remove(email: string) {
 			color: 'success',
 			duration: 3000
 		});
-	} catch {
+	} catch (error) {
 		toast.add({
 			title: 'Failed to Unlink Mailbox',
-			description: 'Could not remove the mailbox. Please try again.',
+			description: extractServerMessage(error, 'Could not remove the mailbox. Please try again.'),
 			icon: 'mdi:alert-circle',
 			color: 'error',
 			duration: 4000

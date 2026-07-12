@@ -31,31 +31,36 @@
 			v-else
 			class="divide-y divide-slate-100 dark:divide-slate-800"
 		>
-			<NuxtLink
+			<UContextMenu
 				v-for="user in users"
 				:key="user.id"
-				:to="`/dashboard/users/${user.id}`"
-				class="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
+				:items="userMenu(user)"
 			>
-				<UAvatar
-					:src="user.avatar_url"
-					:alt="user.username"
-					size="sm"
-				/>
-				<div class="min-w-0 flex-1">
-					<p class="truncate text-sm font-medium">{{ user.name || user.username }}</p>
-					<p class="truncate text-xs text-slate-500">@{{ user.username }} · {{ user.email }}</p>
-				</div>
-				<UBadge
-					:color="roleColor(user.role) as any"
-					variant="subtle"
-					>{{ roleLabel(user.role) }}</UBadge
+				<NuxtLink
+					:to="`/dashboard/users/${user.id}`"
+					class="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
 				>
-				<UIcon
-					name="mdi:chevron-right"
-					class="size-5 text-slate-300"
-				/>
-			</NuxtLink>
+					<Avatar
+						:avatar="user.avatar_url"
+						:id="user.id"
+						:name="user.username"
+						size="sm"
+					/>
+					<div class="min-w-0 flex-1">
+						<p class="truncate text-sm font-medium">{{ user.name || user.username }}</p>
+						<p class="truncate text-xs text-slate-500">@{{ user.username }} · {{ user.email }}</p>
+					</div>
+					<UBadge
+						:color="roleColor(user.role) as any"
+						variant="subtle"
+						>{{ roleLabel(user.role) }}</UBadge
+					>
+					<UIcon
+						name="mdi:chevron-right"
+						class="size-5 text-slate-300"
+					/>
+				</NuxtLink>
+			</UContextMenu>
 		</div>
 	</div>
 </template>
@@ -67,6 +72,8 @@ import { Role } from '~/shared/types/user';
 withDefaults(defineProps<{ users: User[]; pending?: boolean }>(), {
 	pending: false
 });
+
+const { userMenu } = useEntityMenus();
 
 function roleLabel(role: Role): string {
 	return role.charAt(0).toUpperCase() + role.slice(1);
