@@ -1,7 +1,16 @@
 import { allAllShardsGlobal, first, run } from '@earth-app/collegedb';
-import { DBCustomer, ensureCollegeDB } from 'hub:db:schema';
+import type { DBCustomer } from 'hub:db:schema';
+import { ensureCollegeDB } from 'hub:db:schema';
 
 const CUSTOMER_EMAIL_LOOKUP_PREFIX = 'smoke:customer_email_hash:';
+
+// portal magic-link tokens; reusable within their window (kept until ttl, not one-shot)
+const CUSTOMER_MAGIC_PREFIX = 'smoke:customer_magic:';
+const CUSTOMER_MAGIC_TOKEN_BYTES = 32;
+const CUSTOMER_MAGIC_TTL_SECONDS = 60 * 60 * 24 * 14;
+
+// who drove a customer mutation, for the audit trail; absent = guest/system (public submit, inbound email)
+export type CustomerAuditActor = { id?: string; name?: string };
 
 // #region encryption
 
@@ -59,7 +68,7 @@ async function decryptCustomers(customers: DBCustomer[], masterKey: string): Pro
 // #region crud
 
 async function getCustomerRowById(id: number): Promise<DBCustomer | null> {
-	return await first<DBCustomer>(id.toString(), `SELECT * FROM customers WHERE id = ?`, [id]);
+	return await firstRow<DBCustomer>(id.toString(), `SELECT * FROM customers WHERE id = ?`, [id]);
 }
 
 type CustomerCreateInput = {
@@ -83,7 +92,11 @@ async function deleteCustomerEmailLookup(email: string, env: any): Promise<void>
 	await kv.del(`${CUSTOMER_EMAIL_LOOKUP_PREFIX}${lookupHash}`);
 }
 
-export async function createCustomer(input: CustomerCreateInput, env: any): Promise<Customer> {
+export async function createCustomer(
+	input: CustomerCreateInput,
+	env: any,
+	actor?: CustomerAuditActor
+): Promise<Customer> {
 	ensureCollegeDB(env);
 	const maxRow = await first<{ id: number }>(
 		'customers',
@@ -127,15 +140,35 @@ export async function createCustomer(input: CustomerCreateInput, env: any): Prom
 		});
 	}
 
-	await setCustomerEmailLookup(input.email, nextId, env);
+	// guests submit tickets without an email; skip the lookup so they don't collide on hash('')
+	if (input.email) await setCustomerEmailLookup(input.email, nextId, env);
 
-	return await decryptCustomer(createdRow, env.MASTER_KEY);
+	const created = await decryptCustomer(createdRow, env.MASTER_KEY);
+	await recordAudit(env, {
+		action: 'customer.created',
+		actorId: actor?.id ?? null,
+		actorName: actor?.name ?? null,
+		targetType: 'customer',
+		targetId: created.id,
+		summary: `Customer ${created.name || created.email || `#${created.id}`} created`
+	});
+	// fire automation flows; never let a flow error break customer creation
+	await runTicketFlows(
+		{
+			trigger: 'customer.created',
+			customer: { id: created.id, email: created.email, name: created.name },
+			customer_email: created.email || undefined
+		},
+		env
+	).catch(() => {});
+	return created;
 }
 
 export async function patchCustomer(
 	id: number,
 	updates: Partial<Omit<Customer, 'id'>>,
-	env: any
+	env: any,
+	actor?: CustomerAuditActor
 ): Promise<Customer> {
 	ensureCollegeDB(env);
 
@@ -188,18 +221,43 @@ export async function patchCustomer(
 	}
 
 	await kv.del(`smoke:cache:customer_id:${id}`);
-	return await decryptCustomer(updatedRow, env.MASTER_KEY);
+	const updated = await decryptCustomer(updatedRow, env.MASTER_KEY);
+	await recordAudit(env, {
+		action: 'customer.updated',
+		actorId: actor?.id ?? null,
+		actorName: actor?.name ?? null,
+		targetType: 'customer',
+		targetId: id,
+		summary: `Customer ${updated.name || updated.email || `#${id}`} updated`,
+		context: { fields: Object.keys(updates) }
+	});
+	return updated;
 }
 
-export async function deleteCustomer(id: number, env: any): Promise<void> {
+export async function deleteCustomer(
+	id: number,
+	env: any,
+	actor?: CustomerAuditActor
+): Promise<void> {
 	ensureCollegeDB(env);
 	const existing = await getCustomerRowById(id);
+	let descriptor = `#${id}`;
 	if (existing) {
 		const decrypted = await decryptCustomer(existing, env.MASTER_KEY);
+		descriptor = decrypted.name || decrypted.email || descriptor;
 		await deleteCustomerEmailLookup(decrypted.email, env);
 	}
 	await run(id.toString(), `DELETE FROM customers WHERE id = ?`, [id]);
 	await kv.del(`smoke:cache:customer_id:${id}`);
+	await recordAudit(env, {
+		action: 'customer.deleted',
+		actorId: actor?.id ?? null,
+		actorName: actor?.name ?? null,
+		targetType: 'customer',
+		targetId: id,
+		priority: 'high',
+		summary: `Customer ${descriptor} deleted`
+	});
 }
 
 export async function listCustomers(
@@ -270,6 +328,42 @@ export async function getCustomerByEmail(email: string, env: any): Promise<Custo
 	}
 
 	return match ?? null;
+}
+
+// #endregion
+
+// #region magic links
+
+// resolve the public site base url (email setting wins, then env) for building portal links
+async function customerSiteBaseUrl(env: any): Promise<string> {
+	const email = await getEmailSettings();
+	const url = email.site_url || env?.NUXT_PUBLIC_SITE_URL;
+	return typeof url === 'string' && url.length > 0
+		? url.replace(/\/$/, '')
+		: 'https://smoke.pages.dev';
+}
+
+// mint a portal magic-link token for a customer; kv maps token -> customerId for the ttl window
+export async function issueCustomerMagicLink(customerId: number, env: any): Promise<string> {
+	const token = bytesToHex(randomBytes(CUSTOMER_MAGIC_TOKEN_BYTES));
+	await kv.set(`${CUSTOMER_MAGIC_PREFIX}${token}`, String(customerId), {
+		ttl: CUSTOMER_MAGIC_TTL_SECONDS
+	});
+	return token;
+}
+
+// resolve a magic-link token to its customer id; token stays valid until ttl (reusable, not one-shot)
+export async function consumeCustomerMagicLink(token: string, env: any): Promise<number | null> {
+	void env;
+	if (!token) return null;
+	const raw = await kv.get<string>(`${CUSTOMER_MAGIC_PREFIX}${token}`);
+	if (!raw) return null;
+	const id = Number(raw);
+	return Number.isFinite(id) && id > 0 ? id : null;
+}
+
+export async function customerMagicLinkUrl(token: string, env: any): Promise<string> {
+	return `${await customerSiteBaseUrl(env)}/portal/magic/${token}`;
 }
 
 // #endregion
