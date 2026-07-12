@@ -62,7 +62,12 @@ export default defineNitroPlugin((nitro) => {
 			);
 		} else {
 			const ticket = await createTicket(
-				{ title: parsed.subject, description: parsed.text, customer_id: customer.id },
+				{
+					title: parsed.subject,
+					description: parsed.text,
+					customer_id: customer.id,
+					source: 'emailed'
+				},
 				env
 			);
 			ticketId = ticket.id;
@@ -73,6 +78,8 @@ export default defineNitroPlugin((nitro) => {
 
 		if (parsed.messageId) await indexMessageId(parsed.messageId, ticketId);
 		await recordInboundOnThread(ticketId, parsed);
+		// cc'd / additional To addresses become participants (new-ticket + threaded-reply branches)
+		await captureInboundParticipants(ticketId, parsed, env);
 
 		if (isNewTicket) {
 			await sendAutoAck(message, parsed, ticketId, ticketTitle, env).catch((error) =>
