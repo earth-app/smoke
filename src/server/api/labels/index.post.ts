@@ -13,7 +13,12 @@ export default defineEventHandler(async (event) => {
 	const body = await readValidatedBody(event, schemas.labelCreateBody.parse);
 
 	try {
-		return await createLabel(body.name, body.color);
+		const label = await createLabel(body.name, body.color);
+		await runTicketFlows(
+			{ trigger: 'label.created', label: { id: label.id, name: label.name, color: label.color } },
+			event.context.cloudflare.env
+		).catch(() => {});
+		return label;
 	} catch (error) {
 		if (typeof error === 'object' && error !== null && 'statusCode' in error) {
 			throw error;

@@ -39,5 +39,10 @@ export default defineEventHandler(async (event) => {
 		});
 	}
 
+	await runTicketFlows(
+		{ trigger: 'label.deleted', label: { id: label.id, name: label.name, color: label.color } },
+		event.context.cloudflare.env
+	).catch(() => {});
+
 	return sendNoContent(event);
 });

@@ -27,7 +27,15 @@ export default defineEventHandler(async (event) => {
 	const body = await readValidatedBody(event, schemas.labelPatchBody.parse);
 
 	try {
-		return await patchLabel(id, body);
+		const updated = await patchLabel(id, body);
+		await runTicketFlows(
+			{
+				trigger: 'label.updated',
+				label: { id: updated.id, name: updated.name, color: updated.color }
+			},
+			event.context.cloudflare.env
+		).catch(() => {});
+		return updated;
 	} catch (error) {
 		if (typeof error === 'object' && error !== null && 'statusCode' in error) {
 			throw error;
