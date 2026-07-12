@@ -3,8 +3,8 @@
 	"compatibility_date": "2026-05-18",
 	"compatibility_flags": ["nodejs_compat"],
 	"triggers": {
-		// scheduled inbound-mail poll; the task no-ops unless a mailbox is configured in settings
-		"crons": ["*/15 * * * *"]
+		// inbound-mail poll (no-op unless a mailbox is configured) + daily retention + audit sweeps
+		"crons": ["*/15 * * * *", "0 3 * * *", "30 3 * * *"]
 	},
 	"d1_databases": [
 		{
