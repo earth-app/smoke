@@ -5,7 +5,7 @@
 	>
 		<span
 			class="size-2 rounded-full"
-			:style="{ backgroundColor: dotColor }"
+			:style="{ backgroundColor: resolved }"
 		/>
 		{{ label.name }}
 		<button
@@ -31,14 +31,12 @@ const props = withDefaults(defineProps<{ label: Label; removable?: boolean }>(),
 });
 defineEmits<{ remove: [label: Label] }>();
 
-const dotColor = computed(() => props.label.color || '#94a3b8');
+// resolves a nuxt token or css hex into a usable color; neutral fallback when unset
+const resolved = computed(() => resolveColorVar(props.label.color, DEFAULT_LABEL_COLOR));
 
-// soft-tint the badge background from the label color; fall back to neutral slate
-const style = computed(() => {
-	const color = props.label.color || '#64748b';
-	return {
-		backgroundColor: `${color}1a`,
-		color
-	};
-});
+// soft-tint the badge from the resolved color; color-mix stays token-safe
+const style = computed(() => ({
+	backgroundColor: `color-mix(in srgb, ${resolved.value} 12%, transparent)`,
+	color: resolved.value
+}));
 </script>

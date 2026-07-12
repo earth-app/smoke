@@ -20,11 +20,7 @@
 				label="Color"
 				size="sm"
 			>
-				<input
-					v-model="draftColor"
-					type="color"
-					class="h-9 w-16 cursor-pointer rounded border border-slate-200 dark:border-slate-700"
-				/>
+				<ColorPicker v-model="draftColor" />
 			</UFormField>
 			<UButton
 				type="submit"
@@ -64,64 +60,74 @@
 				v-else
 				class="divide-y divide-slate-100 dark:divide-slate-800"
 			>
-				<div
+				<UContextMenu
 					v-for="label in labels"
 					:key="label.id"
-					class="flex items-center gap-3 px-4 py-3"
+					:items="
+						labelMenu(label, { onEdit: () => startEdit(label), onDelete: () => remove(label) })
+					"
 				>
-					<template v-if="editingId === label.id">
-						<input
-							v-model="editColor"
-							type="color"
-							class="h-8 w-12 cursor-pointer rounded border border-slate-200 dark:border-slate-700"
-						/>
-						<UInput
-							v-model="editName"
-							size="sm"
-							class="flex-1"
-						/>
-						<UButton
-							size="xs"
-							color="primary"
-							icon="mdi:check"
-							:loading="savingId === label.id"
-							@click="save(label)"
-							>Save</UButton
-						>
-						<UButton
-							size="xs"
-							color="neutral"
-							variant="ghost"
-							icon="mdi:close"
-							@click="cancelEdit"
-							>Cancel</UButton
-						>
-					</template>
-					<template v-else>
-						<LabelBadge :label="label" />
-						<span class="ml-auto flex items-center gap-1">
+					<div class="flex items-center gap-3 px-4 py-3">
+						<template v-if="editingId === label.id">
+							<div class="flex flex-1 flex-col gap-2">
+								<UInput
+									v-model="editName"
+									size="sm"
+									class="w-full"
+								/>
+								<ColorPicker v-model="editColor" />
+							</div>
 							<UButton
-								v-if="canManage"
+								size="xs"
+								color="primary"
+								icon="mdi:check"
+								:loading="savingId === label.id"
+								@click="save(label)"
+								>Save</UButton
+							>
+							<UButton
 								size="xs"
 								color="neutral"
 								variant="ghost"
-								icon="mdi:pencil-outline"
-								@click="startEdit(label)"
-								>Edit</UButton
+								icon="mdi:close"
+								@click="cancelEdit"
+								>Cancel</UButton
 							>
-							<UButton
-								v-if="canManage"
-								size="xs"
-								color="error"
-								variant="ghost"
-								icon="mdi:delete-outline"
-								:loading="deletingId === label.id"
-								@click="remove(label)"
-								>Delete</UButton
-							>
-						</span>
-					</template>
-				</div>
+						</template>
+						<template v-else>
+							<LabelBadge :label="label" />
+							<span class="ml-auto flex items-center gap-1">
+								<UTooltip
+									v-if="canManage"
+									text="Edit Label"
+								>
+									<UButton
+										size="xs"
+										color="neutral"
+										variant="ghost"
+										icon="mdi:pencil-outline"
+										aria-label="Edit Label"
+										@click="startEdit(label)"
+									/>
+								</UTooltip>
+								<UTooltip
+									v-if="canManage"
+									text="Delete Label"
+								>
+									<UButton
+										size="xs"
+										color="error"
+										variant="ghost"
+										icon="mdi:delete-outline"
+										aria-label="Delete Label"
+										:loading="deletingId === label.id"
+										@click="remove(label)"
+									/>
+								</UTooltip>
+							</span>
+						</template>
+					</div>
+				</UContextMenu>
 			</div>
 		</div>
 	</div>
@@ -133,6 +139,7 @@ import { Permission } from '~/shared/types/user';
 
 const toast = useToast();
 const { can, isAdmin } = useAuth();
+const { labelMenu } = useEntityMenus();
 const { labels, pending, createLabel, patchLabel, deleteLabel } = useLabels(() => ({}));
 
 const canManage = computed(() => isAdmin.value || can(Permission.ManageLabels));
@@ -151,7 +158,9 @@ async function create() {
 	if (!draftName.value.trim()) return;
 	creating.value = true;
 	try {
-		await createLabel({ name: draftName.value.trim(), color: draftColor.value });
+		// token or hex passes through; anything empty/invalid falls back to the default
+		const color = isValidLabelColor(draftColor.value) ? draftColor.value : DEFAULT_LABEL_COLOR;
+		await createLabel({ name: draftName.value.trim(), color });
 		draftName.value = '';
 		draftColor.value = '#3b82f6';
 		toast.add({
@@ -161,10 +170,10 @@ async function create() {
 			color: 'success',
 			duration: 3000
 		});
-	} catch {
+	} catch (error) {
 		toast.add({
 			title: 'Failed to Create Label',
-			description: 'Could not create the label. Please try again.',
+			description: extractServerMessage(error, 'Could not create the label. Please try again.'),
 			icon: 'mdi:alert-circle',
 			color: 'error',
 			duration: 4000
@@ -185,6 +194,7 @@ function cancelEdit() {
 }
 
 async function save(label: Label) {
+	if (!isValidLabelColor(editColor.value)) return;
 	savingId.value = label.id;
 	try {
 		await patchLabel(label.id, { name: editName.value.trim(), color: editColor.value });
@@ -196,10 +206,10 @@ async function save(label: Label) {
 			color: 'success',
 			duration: 3000
 		});
-	} catch {
+	} catch (error) {
 		toast.add({
 			title: 'Failed to Update Label',
-			description: 'Could not save the label. Please try again.',
+			description: extractServerMessage(error, 'Could not save the label. Please try again.'),
 			icon: 'mdi:alert-circle',
 			color: 'error',
 			duration: 4000
@@ -221,10 +231,10 @@ async function remove(label: Label) {
 			color: 'success',
 			duration: 3000
 		});
-	} catch {
+	} catch (error) {
 		toast.add({
 			title: 'Failed to Delete Label',
-			description: 'Could not delete the label. Please try again.',
+			description: extractServerMessage(error, 'Could not delete the label. Please try again.'),
 			icon: 'mdi:alert-circle',
 			color: 'error',
 			duration: 4000
