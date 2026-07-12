@@ -6,6 +6,7 @@ type ReplyBody = {
 	reply_to?: number;
 	attachments?: unknown[];
 	identity?: 'self' | 'team';
+	cc?: string[];
 };
 
 // single ticket + its thread + reply
@@ -16,6 +17,7 @@ export function useTicket(id: MaybeRefOrGetter<number>) {
 	const ticket = computed(() => ticketsStore.get(currentId.value));
 	const thread = computed(() => ticketsStore.threads.get(currentId.value) || null);
 	const messages = computed(() => thread.value?.messages || []);
+	const events = computed(() => thread.value?.events || []);
 
 	const fetchTicket = async (force: boolean = false) => {
 		return await ticketsStore.fetchTicket(currentId.value, force);
@@ -37,6 +39,14 @@ export function useTicket(id: MaybeRefOrGetter<number>) {
 		return await ticketsStore.postMessage(currentId.value, body);
 	};
 
+	const addEmail = async (email: string, note?: string) => {
+		return await ticketsStore.addEmail(currentId.value, email, note);
+	};
+
+	const removeEmail = async (email: string) => {
+		return await ticketsStore.removeEmail(currentId.value, email);
+	};
+
 	// load ticket + thread
 	fetchTicket();
 	fetchThread();
@@ -51,11 +61,14 @@ export function useTicket(id: MaybeRefOrGetter<number>) {
 		ticket,
 		thread,
 		messages,
+		events,
 		fetchTicket,
 		fetchThread,
 		patchTicket,
 		deleteTicket,
-		reply
+		reply,
+		addEmail,
+		removeEmail
 	};
 }
 
