@@ -1,4 +1,5 @@
-import { DBTicket, ensureCollegeDB } from 'hub:db:schema';
+import type { DBTicket } from 'hub:db:schema';
+import { ensureCollegeDB } from 'hub:db:schema';
 
 export default defineEventHandler(async (event) => {
 	try {

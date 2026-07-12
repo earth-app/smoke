@@ -19,7 +19,15 @@ export default defineEventHandler(async (event) => {
 	}
 
 	try {
-		return await createTicket(body, event.context.cloudflare.env);
+		// staff-created tickets default to the 'team' source visibility unless one is set explicitly;
+		// stamp the creator so a customer-less ticket is attributed to the agent, not "Guest"
+		return await createTicket(
+			{ ...body, source: body.source ?? 'team', created_by: current.id } as Parameters<
+				typeof createTicket
+			>[0],
+			event.context.cloudflare.env,
+			{ actorId: current.id }
+		);
 	} catch (error) {
 		if (typeof error === 'object' && error !== null && 'statusCode' in error) {
 			throw error;
