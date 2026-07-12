@@ -26,9 +26,9 @@
 			stroke-linejoin="round"
 		/>
 		<circle
-			v-if="points.length"
-			:cx="points[points.length - 1].x"
-			:cy="points[points.length - 1].y"
+			v-if="lastPoint"
+			:cx="lastPoint.x"
+			:cy="lastPoint.y"
 			r="2.5"
 			fill="currentColor"
 			class="text-primary-500"
@@ -61,11 +61,13 @@ const points = computed(() => {
 
 const linePoints = computed(() => points.value.map((p) => `${p.x},${p.y}`).join(' '));
 
+const lastPoint = computed(() => points.value[points.value.length - 1] ?? null);
+
 const areaPoints = computed(() => {
-	if (points.value.length < 2) return '';
 	const line = points.value.map((p) => `${p.x},${p.y}`).join(' ');
-	const last = points.value[points.value.length - 1];
 	const first = points.value[0];
+	const last = points.value[points.value.length - 1];
+	if (!first || !last) return '';
 	return `${first.x},${props.height} ${line} ${last.x},${props.height}`;
 });
 </script>

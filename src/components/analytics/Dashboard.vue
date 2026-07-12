@@ -5,65 +5,78 @@
 			<USelect
 				v-model="range"
 				:items="rangeItems"
+				icon="mdi:calendar-range"
 				size="sm"
 				class="w-40"
 			/>
 		</div>
 
 		<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-			<div
+			<UContextMenu
 				v-for="kpi in kpis"
 				:key="kpi.label"
-				class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+				:items="widgetMenu({ onRefresh: refresh })"
 			>
-				<div class="flex items-center gap-2 text-slate-400">
-					<UIcon
-						:name="kpi.icon"
-						class="size-4"
-					/>
-					<span class="text-xs font-medium uppercase tracking-wide">{{ kpi.label }}</span>
+				<div
+					class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+				>
+					<div class="flex items-center gap-2 text-slate-400">
+						<UIcon
+							:name="kpi.icon"
+							class="size-4"
+						/>
+						<span class="text-xs font-medium uppercase tracking-wide">{{ kpi.label }}</span>
+					</div>
+					<p class="mt-2 text-2xl font-semibold tabular-nums">{{ kpi.value }}</p>
 				</div>
-				<p class="mt-2 text-2xl font-semibold tabular-nums">{{ kpi.value }}</p>
-			</div>
+			</UContextMenu>
 		</div>
 
 		<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-			<div
-				class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
-			>
-				<div class="mb-3 flex items-center justify-between">
-					<h3 class="text-sm font-semibold">Ticket Volume</h3>
-					<span class="text-xs text-slate-400">{{ volume.length }} days</span>
+			<UContextMenu :items="widgetMenu({ onRefresh: refresh })">
+				<div
+					class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+				>
+					<div class="mb-3 flex items-center justify-between">
+						<h3 class="text-sm font-semibold">Ticket Volume</h3>
+						<span class="text-xs text-slate-400">{{ volume.length }} days</span>
+					</div>
+					<AnalyticsSparkline
+						:data="volumeSeries"
+						:width="320"
+						:height="72"
+						label="Ticket volume"
+						class="w-full text-primary-500"
+					/>
 				</div>
-				<Sparkline
-					:data="volumeSeries"
-					:width="320"
-					:height="72"
-					label="Ticket volume"
-					class="w-full text-primary-500"
-				/>
-			</div>
+			</UContextMenu>
 
-			<div
-				class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
-			>
-				<h3 class="mb-3 text-sm font-semibold">By Status</h3>
-				<BarChart :items="statusBars" />
-			</div>
+			<UContextMenu :items="widgetMenu({ onRefresh: refresh })">
+				<div
+					class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+				>
+					<h3 class="mb-3 text-sm font-semibold">By Status</h3>
+					<AnalyticsBarChart :items="statusBars" />
+				</div>
+			</UContextMenu>
 
-			<div
-				class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
-			>
-				<h3 class="mb-3 text-sm font-semibold">By Priority</h3>
-				<BarChart :items="priorityBars" />
-			</div>
+			<UContextMenu :items="widgetMenu({ onRefresh: refresh })">
+				<div
+					class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+				>
+					<h3 class="mb-3 text-sm font-semibold">By Priority</h3>
+					<AnalyticsBarChart :items="priorityBars" />
+				</div>
+			</UContextMenu>
 
-			<div
-				class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
-			>
-				<h3 class="mb-3 text-sm font-semibold">Channel Mix</h3>
-				<BarChart :items="channelBars" />
-			</div>
+			<UContextMenu :items="widgetMenu({ onRefresh: refresh })">
+				<div
+					class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+				>
+					<h3 class="mb-3 text-sm font-semibold">Channel Mix</h3>
+					<AnalyticsBarChart :items="channelBars" />
+				</div>
+			</UContextMenu>
 		</div>
 	</div>
 </template>
@@ -71,7 +84,10 @@
 <script setup lang="ts">
 import type { AnalyticsRange } from '~/stores/analytics';
 
-const { range, summary } = useAnalytics('30d');
+const { range, summary, fetchSummary } = useAnalytics('30d');
+const { widgetMenu } = useEntityMenus();
+
+const refresh = () => fetchSummary(undefined, true);
 
 const rangeItems: { label: string; value: AnalyticsRange }[] = [
 	{ label: 'Last 7 Days', value: '7d' },
