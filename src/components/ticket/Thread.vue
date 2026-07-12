@@ -1,7 +1,7 @@
 <template>
 	<div class="flex flex-col gap-4">
 		<div
-			v-if="pending && !messages.length"
+			v-if="pending && !entries.length"
 			class="flex flex-col gap-4"
 		>
 			<div
@@ -18,33 +18,44 @@
 		</div>
 
 		<div
-			v-else-if="!messages.length"
+			v-else-if="!entries.length"
 			class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-slate-200 py-12 text-center dark:border-slate-800"
 		>
 			<UIcon
 				name="mdi:message-outline"
 				class="size-8 text-slate-300"
 			/>
-			<p class="text-sm text-slate-500">No messages yet. Start the conversation below.</p>
+			<p class="text-sm text-slate-500">No messages yet. Start the conversation above.</p>
 		</div>
 
 		<div
 			v-else
-			class="flex flex-col gap-5"
+			:class="['flex flex-col', compact ? 'gap-2' : 'gap-5']"
 		>
-			<TicketMessage
-				v-for="message in messages"
-				:key="message.id"
-				:message="message"
-			/>
+			<template
+				v-for="entry in entries"
+				:key="entry.key"
+			>
+				<TicketEvent
+					v-if="entry.type === 'event'"
+					:event="entry.event"
+					:compact="compact"
+				/>
+				<TicketMessage
+					v-else
+					:message="entry.message"
+					:compact="compact"
+				/>
+			</template>
 		</div>
 	</div>
 </template>
 
 <script setup lang="ts">
-import type { TicketMessage } from '~/shared/types/ticket';
+import type { ThreadEntry } from '~/composables/useTicketView';
 
-withDefaults(defineProps<{ messages: TicketMessage[]; pending?: boolean }>(), {
-	pending: false
+withDefaults(defineProps<{ entries: ThreadEntry[]; pending?: boolean; compact?: boolean }>(), {
+	pending: false,
+	compact: false
 });
 </script>
