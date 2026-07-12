@@ -5,7 +5,10 @@
 			collapsed ? 'w-16' : 'w-60'
 		]"
 	>
-		<div class="flex h-16 items-center gap-2 border-b border-slate-200 px-4 dark:border-slate-800">
+		<NuxtLink
+			to="/"
+			class="flex h-16 items-center gap-2 border-b border-slate-200 px-4 hover:opacity-80 dark:border-slate-800"
+		>
 			<UIcon
 				name="mdi:lifebuoy"
 				class="size-7 shrink-0 text-primary-500"
@@ -15,6 +18,13 @@
 				class="truncate text-lg font-semibold"
 				>{{ brandName }}</span
 			>
+		</NuxtLink>
+
+		<div class="p-2">
+			<CommandButton
+				block
+				:collapsed="collapsed"
+			/>
 		</div>
 
 		<nav class="flex flex-1 flex-col gap-1 overflow-y-auto p-2">
@@ -48,9 +58,11 @@
 					'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
 				]"
 			>
-				<UAvatar
-					:src="user?.avatar_url"
-					:alt="user?.username"
+				<Avatar
+					:avatar="user?.avatar_url"
+					:id="user?.id"
+					:name="user?.username"
+					:role="user?.role"
 					size="xs"
 				/>
 				<span
@@ -88,6 +100,7 @@ const brandName = computed(() => (settings.value?.name as string) || 'Smoke');
 const items: NavItem[] = [
 	{ label: 'Overview', to: '/dashboard', icon: 'mdi:view-dashboard-outline' },
 	{ label: 'Tickets', to: '/dashboard/tickets', icon: 'mdi:ticket-outline' },
+	{ label: 'Projects', to: '/dashboard/projects', icon: 'mdi:folder-outline' },
 	{ label: 'Customers', to: '/dashboard/customers', icon: 'mdi:account-group-outline' },
 	{
 		label: 'Labels',
@@ -100,6 +113,12 @@ const items: NavItem[] = [
 		to: '/dashboard/users',
 		icon: 'mdi:shield-account-outline',
 		permission: Permission.ManageUsers
+	},
+	{
+		label: 'Audit Log',
+		to: '/dashboard/audit',
+		icon: 'mdi:clipboard-text-clock-outline',
+		permission: Permission.ViewAuditLog
 	},
 	{
 		label: 'Settings',

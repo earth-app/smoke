@@ -14,6 +14,7 @@
 		</NuxtLink>
 
 		<div class="ml-auto flex items-center gap-2">
+			<CommandButton />
 			<template v-if="authResolving">
 				<Skeleton
 					variant="rect"
@@ -42,6 +43,21 @@
 					size="sm"
 				/>
 			</template>
+			<template v-else-if="isCustomer">
+				<UButton
+					to="/portal"
+					color="primary"
+					variant="soft"
+					icon="mdi:account-circle-outline"
+					>My Requests</UButton
+				>
+				<Avatar
+					:avatar="customer?.avatar_url"
+					:id="customer?.id"
+					:name="customer?.name || customer?.email"
+					size="sm"
+				/>
+			</template>
 			<template v-else>
 				<UButton
 					to="/portal/login"
@@ -64,12 +80,17 @@
 
 <script setup lang="ts">
 const { user, isAuthenticated, sessionToken } = useAuth();
+const { customer, isCustomer } = useCustomerAuth();
 const { settings } = useSettings();
 
 const brandName = computed(() => (settings.value?.name as string) || 'Smoke');
 
-// avoid the anonymous->staff flash: a cookie token present but the user not yet loaded = still resolving
+// avoid the anonymous flash: still resolving while staff auth is unknown, a staff cookie is present
+// but the user isn't loaded, or (not staff) the customer session hasn't resolved yet
 const authResolving = computed(
-	() => user.value === undefined || (!!sessionToken.value && !user.value)
+	() =>
+		user.value === undefined ||
+		(!!sessionToken.value && !user.value) ||
+		(!isAuthenticated.value && customer.value === undefined)
 );
 </script>
