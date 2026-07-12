@@ -4,7 +4,8 @@ import { TicketVisibility } from '~/shared/types/ticket';
 
 const querySchema = z.object({
 	id: z.coerce.number().int().positive(),
-	token: z.string().min(1)
+	// token is optional; an owning or participant customer session authorizes just the same
+	token: z.string().min(1).optional()
 });
 
 export default defineEventHandler(async (event) => {
@@ -13,14 +14,32 @@ export default defineEventHandler(async (event) => {
 
 	const { id, token } = querySchema.parse(getQuery(event));
 
+	// two credentials grant view access: the per-ticket hmac status token (magic-link), or a
+	// signed-in customer who owns or participates in the ticket
+	const sessionCustomer = await getOptionalCustomer(event);
 	const expected = await hmacSha256(env.HMAC_SECRET, `status:${id}`);
-	if (token !== expected) {
+	const tokenOk = !!token && token === expected;
+
+	// no token and no session -> reject without leaking whether the ticket exists
+	if (!tokenOk && !sessionCustomer) {
 		throw createError({ statusCode: 403, message: 'Invalid Status Token' });
 	}
 
-	// the token is the credential, so it grants view access to a public or (unlisted) private
-	// ticket; only staff-internal tickets stay hidden from the public routes
+	// the credential grants view access to a public or (unlisted) private ticket; only staff-internal
+	// tickets stay hidden from the public routes
 	const thread = await getTicketThread(id, env, null, { bypassGate: true });
+
+	// a session authorizes only for the owner or a participant of THIS ticket
+	if (!tokenOk) {
+		const sessionEmail = sessionCustomer?.email?.trim().toLowerCase();
+		const isOwner = !!sessionCustomer && thread.ticket.customer_id === sessionCustomer.id;
+		const isParticipant =
+			!!sessionEmail && (thread.ticket.participants ?? []).includes(sessionEmail);
+		if (!isOwner && !isParticipant) {
+			throw createError({ statusCode: 403, message: 'Invalid Status Token' });
+		}
+	}
+
 	if (thread.ticket.visibility === TicketVisibility.Internal) {
 		throw createError({ statusCode: 404, message: 'Ticket Not Found' });
 	}
@@ -38,13 +57,41 @@ export default defineEventHandler(async (event) => {
 			created_at: message.created_at
 		}));
 
-	// creator display for the header; null for guest / customer-less tickets
+	// creator display for the header: a real customer, else the staff user who opened it
 	const customer = thread.ticket.customer_id
 		? await getCustomerById(thread.ticket.customer_id, env)
 		: null;
-	const creator = customer ? { name: customer.name, email: customer.email } : null;
+
+	let creator: { name: string; email?: string; staff?: boolean } | null = null;
+	if (customer) {
+		creator = { name: customer.name ?? '', email: customer.email, staff: false };
+	} else if (thread.ticket.created_by) {
+		const staff = await getUserById(thread.ticket.created_by, env);
+		if (staff) creator = { name: displayName(staff) || staff.username, staff: true };
+	}
 
 	const locking = await getLockingSettings();
+
+	// field-change timeline for the public viewer; strip actor email/avatar so no internal contact leaks
+	const events = (thread.events ?? []).map((e) => ({
+		id: e.id,
+		kind: e.kind,
+		from: e.from,
+		to: e.to,
+		label: e.label,
+		flow_name: e.flow_name,
+		created_at: e.created_at,
+		actor: e.actor
+			? e.actor.kind === 'user'
+				? {
+						kind: 'user' as const,
+						name: e.actor.name,
+						username: e.actor.username,
+						role: e.actor.role
+					}
+				: { kind: 'customer' as const, name: e.actor.name }
+			: undefined
+	}));
 
 	return {
 		id: thread.ticket.id,
@@ -63,8 +110,9 @@ export default defineEventHandler(async (event) => {
 		creator,
 		// whether the customer may reopen a closed/archived request from this page
 		can_reopen: locking.customer_reopen,
-		// token holders always reply (as the owning customer); the reply endpoint enforces the lock
-		can_reply: true,
-		messages
+		// only a ticket with a real registered customer can be publicly replied to
+		can_reply: !!customer,
+		messages,
+		events
 	};
 });

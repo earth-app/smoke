@@ -5,7 +5,8 @@ import { TicketStatus, TicketVisibility } from '~/shared/types/ticket';
 const bodySchema = z.object({
 	id: z.coerce.number().int().positive(),
 	// token is optional; a verified customer session that owns the ticket authorizes just the same
-	token: z.string().min(1).optional()
+	token: z.string().min(1).optional(),
+	turnstile: z.string().max(4096).optional()
 });
 
 export default defineEventHandler(async (event) => {
@@ -13,6 +14,9 @@ export default defineEventHandler(async (event) => {
 	ensureCollegeDB(env);
 
 	const body = await readValidatedBody(event, bodySchema.parse);
+
+	// captcha gate first (no-op unless turnstile is configured)
+	await verifyTurnstile(event, body.turnstile);
 
 	// two credentials authorize a reopen: the per-ticket hmac status token (magic-link),
 	// or a signed-in customer session that owns the ticket
@@ -28,10 +32,8 @@ export default defineEventHandler(async (event) => {
 	// only staff-internal tickets stay hidden from public routes
 	const thread = await getTicketThread(body.id, env, null, { bypassGate: true });
 
-	// a session (without a valid token) must own the ticket
-	if (!tokenOk && thread.ticket.customer_id !== sessionCustomer!.id) {
-		throw createError({ statusCode: 403, message: 'Invalid Status Token' });
-	}
+	// fail-closed authorization: owning session, or valid token to a ticket with a real customer
+	await authorizePublicTicketWrite({ tokenOk, sessionCustomer, ticket: thread.ticket, env });
 
 	if (thread.ticket.visibility === TicketVisibility.Internal) {
 		throw createError({ statusCode: 404, message: 'Ticket Not Found' });

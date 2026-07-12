@@ -7,15 +7,19 @@ const bodySchema = z.object({
 	email: schemas.email.optional(),
 	name: z.string().min(1).max(128).optional(),
 	title: z.string().min(1).max(200),
-	description: z.string().min(1).max(10_000)
+	description: z.string().min(1).max(10_000),
+	turnstile: z.string().max(4096).optional()
 });
 
 export default defineEventHandler(async (event) => {
 	const env = event.context.cloudflare.env;
 	ensureCollegeDB(env);
 
-	// TODO turnstile
 	const body = await readValidatedBody(event, bodySchema.parse);
+
+	// captcha gate before any customer/ticket creation (no-op unless turnstile is configured)
+	await verifyTurnstile(event, body.turnstile);
+
 	const email = body.email?.trim();
 
 	// with an email we thread it (find/create the customer); without one it's an anonymous guest
