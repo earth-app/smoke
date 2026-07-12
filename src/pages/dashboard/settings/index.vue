@@ -8,60 +8,15 @@
 		<UTabs
 			v-model="tab"
 			:items="tabItems"
-			class="w-full"
+			orientation="vertical"
+			:ui="{ list: 'w-48 shrink-0', trigger: 'justify-start', content: 'flex-1 min-w-0' }"
+			class="w-full items-start gap-4"
 		>
 			<template #branding>
-				<div
-					class="mt-4 flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"
-				>
-					<UFormField
-						label="Name"
-						help="Displayed in the sidebar, navbar, and emails."
-					>
-						<UInput
-							v-model="branding.name"
-							class="w-full"
-						/>
-					</UFormField>
-					<UFormField label="Description">
-						<UTextarea
-							v-model="branding.description"
-							:rows="2"
-							class="w-full"
-						/>
-					</UFormField>
-					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-						<UFormField label="Theme Color">
-							<input
-								v-model="branding.themeColor"
-								type="color"
-								class="h-9 w-full cursor-pointer rounded border border-slate-200 dark:border-slate-700"
-							/>
-						</UFormField>
-						<UFormField label="Logo URL">
-							<UInput
-								v-model="branding.faviconPng"
-								placeholder="https://..."
-								class="w-full"
-							/>
-						</UFormField>
-					</div>
-					<UFormField label="Website">
-						<UInput
-							v-model="branding.website"
-							placeholder="https://..."
-							class="w-full"
-						/>
-					</UFormField>
-					<div class="flex justify-end">
-						<UButton
-							color="primary"
-							icon="mdi:content-save-outline"
-							:loading="savingBranding"
-							@click="saveBranding"
-							>Save Branding</UButton
-						>
-					</div>
+				<div class="mt-4 flex flex-col gap-4">
+					<SettingsBrandingForm />
+					<SettingsRoleIcons />
+					<SettingsRoleColors />
 				</div>
 			</template>
 
@@ -177,17 +132,69 @@
 								color="primary"
 								icon="mdi:content-save-outline"
 								:loading="savingEmail"
-								@click="saveEmail"
+								@click="submitEmail"
 								>Save Email Channel</UButton
 							>
 						</div>
 					</div>
+
+					<EmailInboundConfig />
 				</div>
 			</template>
 
 			<template #cloudflare>
-				<div class="mt-4">
+				<div class="mt-4 flex flex-col gap-4">
 					<CloudflareAccountCard />
+					<div
+						class="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"
+					>
+						<CloudflareCapabilities />
+					</div>
+					<CloudflareEmailOnboarding />
+					<SettingsSecurity />
+				</div>
+			</template>
+
+			<template #visibility>
+				<div class="mt-4">
+					<SettingsVisibility />
+				</div>
+			</template>
+
+			<template #projects>
+				<div class="mt-4">
+					<SettingsProjects />
+				</div>
+			</template>
+
+			<template #customfields>
+				<div class="mt-4">
+					<SettingsCustomFields />
+				</div>
+			</template>
+
+			<template #automation>
+				<div class="mt-4 flex flex-col gap-4">
+					<SettingsAutomation />
+					<SettingsFlows />
+				</div>
+			</template>
+
+			<template #ai>
+				<div class="mt-4">
+					<SettingsAi />
+				</div>
+			</template>
+
+			<template #retention>
+				<div class="mt-4">
+					<SettingsRetention />
+				</div>
+			</template>
+
+			<template #audit>
+				<div class="mt-4">
+					<SettingsAudit />
 				</div>
 			</template>
 
@@ -224,29 +231,34 @@
 </template>
 
 <script setup lang="ts">
-import type { TabsItem } from '@nuxt/ui';
+useSeoMeta({ title: 'Settings' });
+import type { ContextMenuItem, TabsItem } from '@nuxt/ui';
 
 definePageMeta({ layout: 'dashboard', middleware: 'admin' });
 
 const toast = useToast();
-const { settings, fetchSettings, save, sendTestEmail } = useSettings();
+const { settings, fetchSettings, save, saveEmail, sendTestEmail } = useSettings();
 
 const tab = ref('branding');
 
 const tabItems: TabsItem[] = [
-	{ label: 'Branding', slot: 'branding', icon: 'mdi:palette-outline' },
-	{ label: 'Email Channel', slot: 'email', icon: 'mdi:email-outline' },
-	{ label: 'Cloudflare', slot: 'cloudflare', icon: 'mdi:cloud-outline' },
-	{ label: 'Danger', slot: 'danger', icon: 'mdi:alert-outline' }
+	{ label: 'Branding', slot: 'branding', value: 'branding', icon: 'mdi:palette-outline' },
+	{ label: 'Email Channel', slot: 'email', value: 'email', icon: 'mdi:email-outline' },
+	{ label: 'Cloudflare', slot: 'cloudflare', value: 'cloudflare', icon: 'mdi:cloud-outline' },
+	{ label: 'Visibility', slot: 'visibility', value: 'visibility', icon: 'mdi:eye-outline' },
+	{ label: 'Projects', slot: 'projects', value: 'projects', icon: 'mdi:folder-outline' },
+	{
+		label: 'Custom Fields',
+		slot: 'customfields',
+		value: 'customfields',
+		icon: 'mdi:form-select'
+	},
+	{ label: 'Automation', slot: 'automation', value: 'automation', icon: 'mdi:robot-outline' },
+	{ label: 'AI Replies', slot: 'ai', value: 'ai', icon: 'mdi:creation-outline' },
+	{ label: 'Retention', slot: 'retention', value: 'retention', icon: 'mdi:archive-clock-outline' },
+	{ label: 'Audit', slot: 'audit', value: 'audit', icon: 'mdi:clipboard-text-clock-outline' },
+	{ label: 'Danger', slot: 'danger', value: 'danger', icon: 'mdi:alert-outline' }
 ];
-
-const branding = reactive({
-	name: '',
-	description: '',
-	themeColor: '#3b82f6',
-	faviconPng: '',
-	website: ''
-});
 
 const emailForm = reactive({
 	transport: 'cloudflare' as 'cloudflare' | 'smtp',
@@ -263,10 +275,26 @@ const emailForm = reactive({
 
 const testEmail = ref('');
 
-const savingBranding = ref(false);
 const savingEmail = ref(false);
 const sendingTest = ref(false);
 const resetting = ref(false);
+
+// right-click any settings background to jump between the (many) sections
+setPageMenu(() => [
+	[
+		{
+			label: 'Go to Section',
+			icon: 'mdi:tab',
+			children: tabItems.map<ContextMenuItem>((item) => ({
+				label: item.label as string,
+				icon: item.icon,
+				onSelect: () => {
+					tab.value = item.value as string;
+				}
+			}))
+		}
+	]
+]);
 
 const transportItems = [
 	{ label: 'Cloudflare Email Service', value: 'cloudflare' },
@@ -283,12 +311,6 @@ watch(
 	settings,
 	(value) => {
 		if (!value) return;
-		branding.name = (value.name as string) || '';
-		branding.description = (value.description as string) || '';
-		branding.themeColor = (value.themeColor as string) || '#3b82f6';
-		branding.faviconPng = (value.faviconPng as string) || '';
-		branding.website = (value.website as string) || '';
-
 		const email = (value.email as Record<string, any>) || {};
 		emailForm.transport = email.transport === 'smtp' ? 'smtp' : 'cloudflare';
 		emailForm.support_email = email.support_email || (value.supportEmail as string) || '';
@@ -303,37 +325,7 @@ watch(
 	{ immediate: true }
 );
 
-async function saveBranding() {
-	savingBranding.value = true;
-	try {
-		await save({
-			name: branding.name,
-			description: branding.description,
-			themeColor: branding.themeColor,
-			faviconPng: branding.faviconPng,
-			website: branding.website
-		});
-		toast.add({
-			title: 'Branding Saved',
-			description: 'Your branding was updated.',
-			icon: 'mdi:check',
-			color: 'success',
-			duration: 3000
-		});
-	} catch {
-		toast.add({
-			title: 'Failed to Save Branding',
-			description: 'Could not save branding. Please try again.',
-			icon: 'mdi:alert-circle',
-			color: 'error',
-			duration: 4000
-		});
-	} finally {
-		savingBranding.value = false;
-	}
-}
-
-async function saveEmail() {
+async function submitEmail() {
 	savingEmail.value = true;
 	try {
 		const email: Record<string, unknown> = {
@@ -351,7 +343,7 @@ async function saveEmail() {
 			if (emailForm.smtp.password) smtp.password = emailForm.smtp.password;
 			email.smtp = smtp;
 		}
-		await save({ email });
+		await saveEmail(email);
 		emailForm.smtp.password = '';
 		await fetchSettings(true);
 		toast.add({
@@ -361,10 +353,10 @@ async function saveEmail() {
 			color: 'success',
 			duration: 3000
 		});
-	} catch {
+	} catch (error) {
 		toast.add({
 			title: 'Failed to Save Email Channel',
-			description: 'Could not save email settings. Please try again.',
+			description: extractServerMessage(error, 'Could not save email settings. Please try again.'),
 			icon: 'mdi:alert-circle',
 			color: 'error',
 			duration: 4000
@@ -385,10 +377,10 @@ async function sendTest() {
 			color: 'success',
 			duration: 4000
 		});
-	} catch {
+	} catch (error) {
 		toast.add({
 			title: 'Failed to Send Test Email',
-			description: 'Check your email configuration and try again.',
+			description: extractServerMessage(error, 'Check your email configuration and try again.'),
 			icon: 'mdi:alert-circle',
 			color: 'error',
 			duration: 4000
@@ -402,7 +394,7 @@ async function resetBranding() {
 	if (!confirm('Reset branding to defaults?')) return;
 	resetting.value = true;
 	try {
-		await save({ name: '', description: '', themeColor: '#3b82f6', faviconPng: '' });
+		await save({ name: '', description: '', themeColor: '#3b82f6', favicon: '', faviconPng: '' });
 		await fetchSettings(true);
 		toast.add({
 			title: 'Branding Reset',
@@ -411,10 +403,10 @@ async function resetBranding() {
 			color: 'success',
 			duration: 3000
 		});
-	} catch {
+	} catch (error) {
 		toast.add({
 			title: 'Failed to Reset Branding',
-			description: 'Could not reset branding. Please try again.',
+			description: extractServerMessage(error, 'Could not reset branding. Please try again.'),
 			icon: 'mdi:alert-circle',
 			color: 'error',
 			duration: 4000
