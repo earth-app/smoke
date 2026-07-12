@@ -203,6 +203,10 @@ export function useCustomers(options?: MaybeRefOrGetter<QueryParameters | undefi
 		customers.value = customers.value.filter((c) => c.id !== id);
 	};
 
+	const customerMagicLink = async (id: number) => {
+		return await customersStore.customerMagicLink(id);
+	};
+
 	if (options !== undefined) {
 		listCustomers();
 		watch(
@@ -219,7 +223,8 @@ export function useCustomers(options?: MaybeRefOrGetter<QueryParameters | undefi
 		fetchCustomer,
 		createCustomer,
 		patchCustomer,
-		deleteCustomer
+		deleteCustomer,
+		customerMagicLink
 	};
 }
 
