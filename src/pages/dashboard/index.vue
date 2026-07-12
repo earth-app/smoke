@@ -8,25 +8,29 @@
 		</div>
 
 		<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-			<NuxtLink
+			<UContextMenu
 				v-for="card in quickCards"
 				:key="card.label"
-				:to="card.to"
-				class="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-4 transition-colors hover:border-primary-300 dark:border-slate-800 dark:bg-slate-900"
+				:items="widgetMenu({ to: card.to })"
 			>
-				<span
-					class="flex size-10 items-center justify-center rounded-lg bg-primary-50 text-primary-600 dark:bg-primary-950 dark:text-primary-400"
+				<NuxtLink
+					:to="card.to"
+					class="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-4 transition-colors hover:border-primary-300 dark:border-slate-800 dark:bg-slate-900"
 				>
-					<UIcon
-						:name="card.icon"
-						class="size-5"
-					/>
-				</span>
-				<div class="min-w-0">
-					<p class="text-sm font-medium">{{ card.label }}</p>
-					<p class="truncate text-xs text-slate-500">{{ card.hint }}</p>
-				</div>
-			</NuxtLink>
+					<span
+						class="flex size-10 items-center justify-center rounded-lg bg-primary-50 text-primary-600 dark:bg-primary-950 dark:text-primary-400"
+					>
+						<UIcon
+							:name="card.icon"
+							class="size-5"
+						/>
+					</span>
+					<div class="min-w-0">
+						<p class="text-sm font-medium">{{ card.label }}</p>
+						<p class="truncate text-xs text-slate-500">{{ card.hint }}</p>
+					</div>
+				</NuxtLink>
+			</UContextMenu>
 		</div>
 
 		<AnalyticsDashboard v-if="canViewAnalytics" />
@@ -40,12 +44,14 @@
 </template>
 
 <script setup lang="ts">
+useSeoMeta({ title: 'Dashboard' });
 import { Permission } from '~/shared/types/user';
 
 definePageMeta({ layout: 'dashboard', middleware: 'staff' });
 
 const { user } = useAuth();
 const { can, isAdmin } = useAuth();
+const { widgetMenu } = useEntityMenus();
 
 const canViewAnalytics = computed(() => isAdmin.value || can(Permission.ManageTicket));
 
