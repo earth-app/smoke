@@ -228,4 +228,41 @@ export function useCustomers(options?: MaybeRefOrGetter<QueryParameters | undefi
 	};
 }
 
+export function useCustomerAuth() {
+	const customerStore = useCustomerPortalStore();
+
+	const customer = computed(() => customerStore.customer);
+	const isCustomer = computed(() => customerStore.isCustomer);
+	const isLoading = computed(() => customerStore.isLoading);
+
+	const fetchCustomer = async (force: boolean = false) => await customerStore.fetchCustomer(force);
+
+	const requestOtp = async (email: string, turnstile?: string) => {
+		try {
+			await customerStore.requestOtp(email, turnstile);
+			return { success: true, message: 'Verification code sent' };
+		} catch (error) {
+			return { success: false, message: extractServerMessage(error, 'Could not send a code.') };
+		}
+	};
+
+	const verifyOtp = async (email: string, code: string) => {
+		try {
+			const verified = await customerStore.verifyOtp(email, code);
+			return { success: true, message: 'Verified', customer: verified };
+		} catch (error) {
+			return { success: false, message: extractServerMessage(error, 'That code was not valid.') };
+		}
+	};
+
+	const logout = async () => {
+		await customerStore.logout();
+	};
+
+	// hydrate customer state from the httpOnly session cookie
+	fetchCustomer();
+
+	return { customer, isCustomer, isLoading, fetchCustomer, requestOtp, verifyOtp, logout };
+}
+
 // #endregion
