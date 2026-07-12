@@ -1,7 +1,10 @@
 import { allAllShardsGlobal, first, run } from '@earth-app/collegedb';
-import { DBLabel } from 'hub:db:schema';
+import type { DBLabel } from 'hub:db:schema';
 
-export async function createLabel(name: string, color?: string): Promise<Label> {
+// audit attribution passed down from the route; env lets recordAudit init shards when needed
+type AuditOpts = { env?: any; actorId?: string | null; actorName?: string | null };
+
+export async function createLabel(name: string, color?: string, opts?: AuditOpts): Promise<Label> {
 	const maxRow = await first<{ id: number }>(
 		'labels',
 		`SELECT COALESCE(MAX(id), 0) + 1 AS id FROM labels`,
@@ -23,6 +26,17 @@ export async function createLabel(name: string, color?: string): Promise<Label> 
 			message: 'Failed to create label'
 		});
 	}
+
+	await recordAudit(opts?.env, {
+		action: 'label.created',
+		actorId: opts?.actorId ?? null,
+		actorName: opts?.actorName ?? null,
+		targetType: 'label',
+		targetId: label.id,
+		priority: 'low',
+		summary: `Created label "${label.name}"`,
+		context: { name: label.name, color: label.color ?? null }
+	});
 
 	return { ...label, color: label.color || undefined };
 }
@@ -48,7 +62,11 @@ export async function listLabels(): Promise<Label[]> {
 	return labels.map((label) => ({ ...label, color: label.color || undefined }));
 }
 
-export async function patchLabel(id: number, updates: Partial<Omit<Label, 'id'>>): Promise<Label> {
+export async function patchLabel(
+	id: number,
+	updates: Partial<Omit<Label, 'id'>>,
+	opts?: AuditOpts
+): Promise<Label> {
 	const fields = [];
 	const bindings = [];
 	if (updates.name) {
@@ -82,9 +100,30 @@ export async function patchLabel(id: number, updates: Partial<Omit<Label, 'id'>>
 		});
 	}
 
+	await recordAudit(opts?.env, {
+		action: 'label.updated',
+		actorId: opts?.actorId ?? null,
+		actorName: opts?.actorName ?? null,
+		targetType: 'label',
+		targetId: id,
+		priority: 'low',
+		summary: `Updated label "${updated.name}"`,
+		context: { fields: Object.keys(updates) }
+	});
+
 	return { ...updated, color: updated.color || undefined };
 }
 
-export async function deleteLabel(id: number): Promise<void> {
+export async function deleteLabel(id: number, opts?: AuditOpts): Promise<void> {
 	await run(String(id), `DELETE FROM labels WHERE id = ?`, [id]);
+
+	await recordAudit(opts?.env, {
+		action: 'label.deleted',
+		actorId: opts?.actorId ?? null,
+		actorName: opts?.actorName ?? null,
+		targetType: 'label',
+		targetId: id,
+		priority: 'normal',
+		summary: `Deleted label #${id}`
+	});
 }
