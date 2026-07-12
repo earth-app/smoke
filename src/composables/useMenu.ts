@@ -90,10 +90,11 @@ export function useEntityMenus() {
 		};
 
 		const primary: Section = [
-			{ label: 'Open', icon: 'mdi:open-in-new', to: path },
+			{ label: 'Open', icon: 'mdi:open-in-new', color: 'primary', to: path },
 			{
 				label: 'Copy Link',
 				icon: 'mdi:link-variant',
+				color: 'info',
 				onSelect: () => copy(`${origin()}${path}`, 'Link')
 			}
 		];
@@ -123,6 +124,7 @@ export function useEntityMenus() {
 			manage.push({
 				label: ticket.archived ? 'Unarchive' : 'Archive',
 				icon: ticket.archived ? 'mdi:archive-arrow-up-outline' : 'mdi:archive-outline',
+				color: ticket.archived ? undefined : 'warning',
 				onSelect: () =>
 					patch({ archived: !ticket.archived }, ticket.archived ? 'Unarchived' : 'Archived')
 			});
@@ -137,16 +139,20 @@ export function useEntityMenus() {
 		opts?: { onEditTags?: () => void }
 	): ContextMenuItem[][] => {
 		const path = `/dashboard/customers/${customer.id}`;
-		const primary: Section = [{ label: 'Open', icon: 'mdi:open-in-new', to: path }];
+		const primary: Section = [
+			{ label: 'Open', icon: 'mdi:open-in-new', color: 'primary', to: path }
+		];
 		if (customer.email)
 			primary.push({
 				label: 'Copy Email',
 				icon: 'mdi:email-outline',
+				color: 'info',
 				onSelect: () => copy(customer.email, 'Email')
 			});
 		primary.push({
 			label: 'Copy Link',
 			icon: 'mdi:link-variant',
+			color: 'info',
 			onSelect: () => copy(`${origin()}${path}`, 'Link')
 		});
 
@@ -162,6 +168,7 @@ export function useEntityMenus() {
 			manage.push({
 				label: 'Copy Portal Access Link',
 				icon: 'mdi:link-lock',
+				color: 'info',
 				onSelect: async () => {
 					try {
 						const url = await store.customerMagicLink(customer.id);
@@ -185,10 +192,11 @@ export function useEntityMenus() {
 		const path = `/dashboard/users/${user.id}`;
 		return [
 			[
-				{ label: 'Open', icon: 'mdi:open-in-new', to: path },
+				{ label: 'Open', icon: 'mdi:open-in-new', color: 'primary', to: path },
 				{
 					label: 'Copy Link',
 					icon: 'mdi:link-variant',
+					color: 'info',
 					onSelect: () => copy(`${origin()}${path}`, 'Link')
 				}
 			]
@@ -200,7 +208,12 @@ export function useEntityMenus() {
 		opts?: { onEdit?: () => void; onDelete?: () => void }
 	): ContextMenuItem[][] => {
 		const primary: Section = [
-			{ label: 'Copy Name', icon: 'mdi:content-copy', onSelect: () => copy(label.name, 'Name') }
+			{
+				label: 'Copy Name',
+				icon: 'mdi:content-copy',
+				color: 'info',
+				onSelect: () => copy(label.name, 'Name')
+			}
 		];
 		const manage: Section = [];
 		if (allow(Permission.ManageLabels) && opts?.onEdit)
@@ -219,10 +232,11 @@ export function useEntityMenus() {
 		const path = `/dashboard/projects/${project.id}`;
 		return [
 			[
-				{ label: 'Open', icon: 'mdi:open-in-new', to: path },
+				{ label: 'Open', icon: 'mdi:open-in-new', color: 'primary', to: path },
 				{
 					label: 'Copy Link',
 					icon: 'mdi:link-variant',
+					color: 'info',
 					onSelect: () => copy(`${origin()}${path}`, 'Link')
 				}
 			]
@@ -234,21 +248,23 @@ export function useEntityMenus() {
 		const path = `/status/${ticket.token}?id=${ticket.id}`;
 		return [
 			[
-				{ label: 'Open', icon: 'mdi:open-in-new', to: path },
+				{ label: 'Open', icon: 'mdi:open-in-new', color: 'primary', to: path },
 				{
 					label: 'Copy Tracking Link',
 					icon: 'mdi:link-variant',
+					color: 'info',
 					onSelect: () => copy(`${origin()}${path}`, 'Link')
 				}
 			]
 		];
 	};
 
-	// project a palette command into a menu item (kbds/to/onSelect carry over)
+	// project a palette command into a menu item (kbds/to/onSelect/color carry over)
 	const toMenuItem = (item: CommandItem): ContextMenuItem => ({
 		label: item.label,
 		icon: item.icon,
 		kbds: item.kbds,
+		color: item.color,
 		to: item.to,
 		onSelect: item.onSelect
 	});
@@ -267,6 +283,7 @@ export function useEntityMenus() {
 				label: 'Command Palette',
 				icon: 'mdi:magnify',
 				kbds: ['meta', 'k'],
+				color: 'primary',
 				onSelect: () => palette.show()
 			}
 		];
@@ -289,6 +306,7 @@ export function useEntityMenus() {
 			{
 				label: 'Copy Page Link',
 				icon: 'mdi:link-variant',
+				color: 'info',
 				onSelect: () => copy(`${origin()}${route.fullPath}`, 'Link')
 			},
 			{
@@ -306,10 +324,11 @@ export function useEntityMenus() {
 	const widgetMenu = (opts: { to?: string; onRefresh?: () => void }): ContextMenuItem[][] => {
 		const primary: Section = [];
 		if (opts.to) {
-			primary.push({ label: 'Open', icon: 'mdi:open-in-new', to: opts.to });
+			primary.push({ label: 'Open', icon: 'mdi:open-in-new', color: 'primary', to: opts.to });
 			primary.push({
 				label: 'Copy Link',
 				icon: 'mdi:link-variant',
+				color: 'info',
 				onSelect: () => copy(`${origin()}${opts.to}`, 'Link')
 			});
 		}
@@ -332,17 +351,20 @@ export function useEntityMenus() {
 			primary.push({
 				label: `Open Ticket #${entry.ticket_id}`,
 				icon: 'mdi:open-in-new',
+				color: 'primary',
 				to: `/dashboard/tickets/${entry.ticket_id}`
 			});
 		if (entry.summary)
 			primary.push({
 				label: 'Copy Summary',
 				icon: 'mdi:content-copy',
+				color: 'info',
 				onSelect: () => copy(entry.summary as string, 'Summary')
 			});
 		primary.push({
 			label: 'Copy Details',
 			icon: 'mdi:code-json',
+			color: 'info',
 			onSelect: () => copy(JSON.stringify(entry, null, 2), 'Details')
 		});
 
@@ -351,18 +373,21 @@ export function useEntityMenus() {
 			filters.push({
 				label: `Filter by ${prettyAction(entry.action)}`,
 				icon: 'mdi:filter-variant',
+				color: 'secondary',
 				onSelect: () => opts.onFilterAction?.(entry)
 			});
 		if (opts?.onFilterActor && (entry.actor_name || entry.actor_id))
 			filters.push({
 				label: `Filter by ${entry.actor_name || entry.actor_id}`,
 				icon: 'mdi:account-filter-outline',
+				color: 'secondary',
 				onSelect: () => opts.onFilterActor?.(entry)
 			});
 		if (opts?.onFilterTicket && entry.ticket_id != null)
 			filters.push({
 				label: `Filter by Ticket #${entry.ticket_id}`,
 				icon: 'mdi:ticket-outline',
+				color: 'secondary',
 				onSelect: () => opts.onFilterTicket?.(entry)
 			});
 

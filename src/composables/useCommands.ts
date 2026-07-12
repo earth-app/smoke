@@ -1,8 +1,10 @@
+import type { ContextMenuItem } from '@nuxt/ui';
+
 // a combo -> handler map; assignable to defineShortcuts' config shape
 type ShortcutsConfig = Record<string, () => void>;
 
 // one entry serves the palette (group items), the nav chords (shortcut), and its kbd hint (derived
-// from shortcut so there is a single source of truth)
+// from shortcut so there is a single source of truth); color carries into the context menu variant
 export interface CommandItem {
 	id: string;
 	label: string;
@@ -12,6 +14,7 @@ export interface CommandItem {
 	to?: string;
 	onSelect?: () => void;
 	suffix?: string;
+	color?: ContextMenuItem['color'];
 }
 
 export interface CommandGroup {
@@ -82,6 +85,7 @@ export function useCommands() {
 		id: 'theme',
 		label: colorMode.value === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode',
 		icon: colorMode.value === 'dark' ? 'mdi:white-balance-sunny' : 'mdi:weather-night',
+		color: 'secondary',
 		onSelect: toggleTheme
 	}));
 
@@ -167,6 +171,7 @@ export function useCommands() {
 				id: 'new-ticket',
 				label: 'New Ticket',
 				icon: 'mdi:plus-circle-outline',
+				color: 'primary',
 				to: '/dashboard/tickets?new=1',
 				shortcut: 'n'
 			});
@@ -175,6 +180,7 @@ export function useCommands() {
 				id: 'new-customer',
 				label: 'New Customer',
 				icon: 'mdi:account-plus-outline',
+				color: 'primary',
 				to: '/dashboard/customers?new=1'
 			});
 		if (allow(Permission.ManageLabels))
@@ -182,6 +188,7 @@ export function useCommands() {
 				id: 'new-label',
 				label: 'New Label',
 				icon: 'mdi:tag-plus-outline',
+				color: 'primary',
 				to: '/dashboard/labels'
 			});
 		items.push(withKbds(themeItem.value));
@@ -189,6 +196,7 @@ export function useCommands() {
 			id: 'signout',
 			label: 'Sign Out',
 			icon: 'mdi:logout',
+			color: 'error',
 			onSelect: async () => {
 				await auth.logout();
 				await navigateTo('/login');
@@ -199,12 +207,19 @@ export function useCommands() {
 
 	// customer portal
 	const portalItems = computed<CommandItem[]>(() => [
-		{ id: 'portal-requests', label: 'My Requests', icon: 'mdi:inbox-outline', to: '/portal' },
+		{
+			id: 'portal-requests',
+			label: 'My Requests',
+			icon: 'mdi:inbox-outline',
+			color: 'primary',
+			to: '/portal'
+		},
 		withKbds(themeItem.value),
 		{
 			id: 'portal-signout',
 			label: 'Sign Out',
 			icon: 'mdi:logout',
+			color: 'error',
 			onSelect: async () => {
 				await customerAuth.logout();
 				await navigateTo('/portal/login');
@@ -218,9 +233,16 @@ export function useCommands() {
 			id: 'guest-submit',
 			label: 'Submit a Request',
 			icon: 'mdi:email-plus-outline',
+			color: 'primary',
 			to: '/submit'
 		},
-		{ id: 'guest-track', label: 'Track a Request', icon: 'mdi:magnify', to: '/search' },
+		{
+			id: 'guest-track',
+			label: 'Track a Request',
+			icon: 'mdi:magnify',
+			color: 'info',
+			to: '/search'
+		},
 		{
 			id: 'guest-portal',
 			label: 'Customer Portal',
