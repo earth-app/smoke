@@ -26,5 +26,13 @@ export default defineEventHandler(async (event) => {
 		});
 	}
 
+	await runTicketFlows(
+		{
+			trigger: 'agent.deleted',
+			agent: { id: target.id, username: target.username, name: target.name, role: target.role }
+		},
+		event.context.cloudflare.env
+	).catch(() => {});
+
 	return sendNoContent(event);
 });

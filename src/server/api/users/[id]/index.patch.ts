@@ -27,6 +27,22 @@ export default defineEventHandler(async (event) => {
 		});
 	}
 
-	const updatedUser = await patchUser(target, body, event.context.cloudflare.env);
+	const updatedUser = await patchUser(
+		target,
+		body as Parameters<typeof patchUser>[1],
+		event.context.cloudflare.env
+	);
+	await runTicketFlows(
+		{
+			trigger: 'agent.updated',
+			agent: {
+				id: updatedUser.id,
+				username: updatedUser.username,
+				name: updatedUser.name,
+				role: updatedUser.role
+			}
+		},
+		event.context.cloudflare.env
+	).catch(() => {});
 	return updatedUser;
 });

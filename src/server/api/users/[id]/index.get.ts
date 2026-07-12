@@ -13,5 +13,6 @@ export default defineEventHandler(async (event) => {
 		});
 	}
 
-	return user;
+	// flag the founding owner so the client can render owner role-context (owner = a locked admin)
+	return { ...user, is_owner: await isOwnerUser(user.id) };
 });

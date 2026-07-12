@@ -24,6 +24,15 @@ export default defineEventHandler(async (event) => {
 		});
 	}
 
+	// iconify avatar has no image; the client wrapper renders the icon directly
+	if (avatarUrl.startsWith('icon:')) {
+		throw createError({
+			statusCode: 404,
+			message: 'User avatar is an icon, not an image',
+			data: { param: id, success: false }
+		});
+	}
+
 	// proxy external urls; "local" means an uploaded blob
 	if (avatarUrl.startsWith('http://') || avatarUrl.startsWith('https://')) {
 		return sendRedirect(event, avatarUrl);

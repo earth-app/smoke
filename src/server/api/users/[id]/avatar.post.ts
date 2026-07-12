@@ -1,5 +1,6 @@
 import { blob } from 'hub:blob';
 import z from 'zod';
+import { Permission, Role } from '~/shared/types/user';
 import * as schemas from '~/shared/utils/schemas';
 
 export default defineEventHandler(async (event) => {
@@ -15,11 +16,41 @@ export default defineEventHandler(async (event) => {
 		});
 	}
 
+	// relationship gate (self needs ManageSelf, others need ManageUsers/admin)
 	await ensureCanWriteTo(current, target);
+
+	// capability gate; every avatar change requires ChangeAvatar (admins have it by default)
+	if (!current.permissions.includes(Permission.ChangeAvatar)) {
+		throw createError({
+			statusCode: 403,
+			message: 'You do not have permission to change avatars',
+			data: { success: false }
+		});
+	}
+
+	// per-site policy applies only to an agent editing their OWN avatar; managers/owners bypass
+	const isSelfAgent = current.id === target.id && current.role === Role.Agent;
+	const avatarPolicy = isSelfAgent ? await getAvatarPolicy() : null;
+	if (avatarPolicy && !avatarPolicy.agent_can_change) {
+		throw createError({
+			statusCode: 403,
+			message: 'Avatar changes are disabled for your account',
+			data: { success: false }
+		});
+	}
+	// image uploads (multipart + base64) may be disabled while icon/url stays allowed
+	const uploadBlocked = !!avatarPolicy && !avatarPolicy.agent_can_upload;
 
 	// multipart upload: read the "avatar" file part and store it as a blob
 	const contentType = getHeader(event, 'content-type') || '';
 	if (contentType.includes('multipart/form-data')) {
+		if (uploadBlocked) {
+			throw createError({
+				statusCode: 403,
+				message: 'Image uploads are disabled; choose an icon or link an image url',
+				data: { success: false }
+			});
+		}
 		const form = await readMultipartFormData(event);
 		const file = form?.find((part) => part.name === 'avatar' && part.data?.length);
 		if (!file) {
@@ -36,11 +67,21 @@ export default defineEventHandler(async (event) => {
 		return await patchUser(target, { avatar_url: 'local' }, event.context.cloudflare.env);
 	}
 
-	// json body: exactly one of url (https) or base64 (data uri)
+	// json body: exactly one of icon, url (https), or base64 (data uri)
 	const bodyType = z.union([
-		z.object({ url: schemas.avatar_url.unwrap(), base64: z.never().optional() }),
+		z.object({
+			icon: schemas.avatar_icon,
+			url: z.never().optional(),
+			base64: z.never().optional()
+		}),
+		z.object({
+			url: schemas.avatar_url.unwrap(),
+			base64: z.never().optional(),
+			icon: z.never().optional()
+		}),
 		z.object({
 			url: z.never().optional(),
+			icon: z.never().optional(),
 			base64: z
 				.string()
 				.regex(
@@ -50,7 +91,12 @@ export default defineEventHandler(async (event) => {
 		})
 	]);
 
-	const { url, base64 } = await readValidatedBody(event, bodyType.parse);
+	const { url, base64, icon } = await readValidatedBody(event, bodyType.parse);
+
+	// iconify avatar; stored via the `icon:` sentinel, no blob involved
+	if (icon) {
+		return await patchUser(target, { avatar_url: `icon:${icon}` }, event.context.cloudflare.env);
+	}
 
 	// already validated as an https url by schema
 	if (url) {
@@ -58,6 +104,13 @@ export default defineEventHandler(async (event) => {
 	}
 
 	if (base64) {
+		if (uploadBlocked) {
+			throw createError({
+				statusCode: 403,
+				message: 'Image uploads are disabled; choose an icon or link an image url',
+				data: { success: false }
+			});
+		}
 		// base64 data uri -> blob, mark avatar_url as "local"
 		const mimeMatch = base64.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
 		if (!mimeMatch) {
