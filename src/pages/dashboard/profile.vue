@@ -18,34 +18,42 @@
 				class="flex flex-col gap-5 rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"
 			>
 				<div class="flex items-center gap-4">
-					<UAvatar
-						:src="user.avatar_url"
-						:alt="user.username"
+					<Avatar
+						:avatar="user.avatar_url"
+						:id="user.id"
+						:name="displayName(user)"
 						size="xl"
 					/>
-					<div class="flex flex-col gap-2">
-						<UButton
-							color="neutral"
-							variant="soft"
-							icon="mdi:camera-outline"
-							size="sm"
-							:loading="uploading"
-							@click="pickAvatar"
-							>Change Avatar</UButton
-						>
-						<input
-							ref="avatarInput"
-							type="file"
-							accept="image/*"
-							class="hidden"
-							@change="onAvatarChosen"
+					<div class="min-w-0">
+						<p class="truncate font-medium">{{ displayName(user) }}</p>
+						<UserAvatarPicker
+							:user-id="user.id"
+							:current-avatar="user.avatar_url"
+							:name="displayName(user)"
+							@updated="onAvatarUpdated"
 						/>
-						<p class="text-xs text-slate-400">PNG or JPG, up to a few MB.</p>
 					</div>
 				</div>
 
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-					<UFormField label="Name">
+					<UFormField
+						label="First Name"
+						help="Shown across the dashboard in place of your username."
+					>
+						<UInput
+							v-model="form.first_name"
+							class="w-full"
+						/>
+					</UFormField>
+					<UFormField label="Last Name">
+						<UInput
+							v-model="form.last_name"
+							class="w-full"
+						/>
+					</UFormField>
+				</div>
+				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+					<UFormField label="Display Name">
 						<UInput
 							v-model="form.name"
 							class="w-full"
@@ -80,29 +88,27 @@
 				</div>
 			</div>
 
-			<LinkedMailboxes :user-id="user.id" />
+			<UserLinkedMailboxes :user-id="user.id" />
 		</template>
 	</div>
 </template>
 
 <script setup lang="ts">
-import { useUserStore } from '~/stores/user';
-
+useSeoMeta({ title: 'Profile' });
 definePageMeta({ layout: 'dashboard', middleware: 'staff' });
 
 const toast = useToast();
 const { user, updateUser, fetchUser } = useAuth();
-const userStore = useUserStore();
 
-const form = reactive({ name: '', username: '', email: '' });
+const form = reactive({ first_name: '', last_name: '', name: '', username: '', email: '' });
 const saving = ref(false);
-const uploading = ref(false);
-const avatarInput = ref<HTMLInputElement | null>(null);
 
 watch(
 	user,
 	(value) => {
 		if (value) {
+			form.first_name = value.first_name || '';
+			form.last_name = value.last_name || '';
 			form.name = value.name || '';
 			form.username = value.username || '';
 			form.email = value.email || '';
@@ -111,43 +117,35 @@ watch(
 	{ immediate: true }
 );
 
-function pickAvatar() {
-	avatarInput.value?.click();
-}
-
-async function onAvatarChosen(event: Event) {
-	const target = event.target as HTMLInputElement;
-	const file = target.files?.[0];
-	target.value = '';
-	if (!file || !user.value) return;
-	uploading.value = true;
-	try {
-		await userStore.setAvatar(user.value.id, file);
-		await fetchUser(true);
-		toast.add({
-			title: 'Avatar Updated',
-			description: 'Your new avatar was saved.',
-			icon: 'mdi:check',
-			color: 'success',
-			duration: 3000
-		});
-	} catch {
-		toast.add({
-			title: 'Failed to Update Avatar',
-			description: 'Could not upload your avatar. Please try again.',
-			icon: 'mdi:alert-circle',
-			color: 'error',
-			duration: 4000
-		});
-	} finally {
-		uploading.value = false;
-	}
+async function onAvatarUpdated() {
+	// setAvatar updates the user store cache but not useAuth().user; refresh it
+	await fetchUser(true);
+	toast.add({
+		title: 'Avatar Updated',
+		description: 'Your new avatar was saved.',
+		icon: 'mdi:check',
+		color: 'success',
+		duration: 3000
+	});
 }
 
 async function saveProfile() {
+	// a last name requires a first name (mirrors the server refine)
+	if (form.last_name.trim() && !form.first_name.trim()) {
+		toast.add({
+			title: 'First Name Required',
+			description: 'Enter a first name before adding a last name.',
+			icon: 'mdi:alert-circle',
+			color: 'warning',
+			duration: 4000
+		});
+		return;
+	}
 	saving.value = true;
 	try {
 		const result = await updateUser({
+			first_name: form.first_name.trim() || undefined,
+			last_name: form.last_name.trim() || undefined,
 			name: form.name,
 			username: form.username,
 			email: form.email
@@ -160,10 +158,10 @@ async function saveProfile() {
 			color: 'success',
 			duration: 3000
 		});
-	} catch {
+	} catch (error) {
 		toast.add({
 			title: 'Failed to Save Profile',
-			description: 'Could not save your profile. Please try again.',
+			description: extractServerMessage(error, 'Could not save your profile. Please try again.'),
 			icon: 'mdi:alert-circle',
 			color: 'error',
 			duration: 4000
