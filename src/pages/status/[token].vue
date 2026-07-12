@@ -42,93 +42,136 @@
 
 		<div
 			v-else
-			class="space-y-6"
+			class="space-y-5"
 		>
-			<UCard>
-				<div class="flex flex-col gap-3">
-					<div class="flex items-start justify-between gap-4">
-						<div>
-							<p class="text-sm text-muted">Ticket #{{ ticket.id }}</p>
-							<h2 class="text-xl font-semibold">{{ ticket.title }}</h2>
-						</div>
-						<UBadge
-							:color="statusColor"
-							variant="subtle"
-							class="shrink-0 capitalize"
-						>
-							{{ formatEnum(ticket.status) }}
-						</UBadge>
-					</div>
-					<div class="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted">
-						<span>
-							Priority:
-							<span class="font-medium capitalize text-highlighted">{{
-								formatEnum(ticket.priority)
-							}}</span>
-						</span>
-						<span>Opened {{ formatDate(ticket.created_at) }}</span>
-					</div>
-				</div>
-			</UCard>
-
-			<div>
-				<h3 class="mb-3 text-lg font-semibold">Conversation</h3>
-				<div
-					v-if="ticket.messages.length"
-					class="space-y-3"
-				>
-					<UCard
-						v-for="(message, index) in ticket.messages"
-						:key="index"
-						:class="message.sender_kind === 'customer' ? 'sm:ml-8' : 'sm:mr-8'"
+			<UAlert
+				v-if="isAuthenticated"
+				color="info"
+				variant="subtle"
+				icon="mdi:shield-account-outline"
+				title="Staff View"
+				description="You are viewing the public status page for this request."
+				orientation="horizontal"
+			>
+				<template #actions>
+					<UButton
+						:to="`/dashboard/tickets/${ticket.id}`"
+						color="info"
+						variant="solid"
+						size="sm"
+						icon="mdi:open-in-new"
 					>
-						<div class="flex items-center justify-between gap-2 text-sm">
-							<span class="flex items-center gap-2 font-medium">
-								<UIcon
-									:name="
-										message.sender_kind === 'customer' ? 'mdi:account-outline' : 'mdi:face-agent'
-									"
-									class="size-4 text-primary"
-								/>
-								{{ message.sender_kind === 'customer' ? 'You' : 'Support' }}
-							</span>
-							<span class="text-muted">{{ formatDate(message.created_at) }}</span>
+						Open in Dashboard
+					</UButton>
+				</template>
+			</UAlert>
+
+			<TicketDeletionBanner
+				v-if="bannerTicket"
+				:ticket="bannerTicket"
+			/>
+
+			<TicketConversation
+				:header="ticket"
+				:messages="ticket.messages"
+				:events="ticket.events"
+				:locked="ticket.locked"
+				:archived="ticket.archived"
+				:can-reply="canReply"
+			>
+				<template #reply>
+					<UCard>
+						<h3 class="mb-3 text-lg font-semibold">Add a Reply</h3>
+						<UTextarea
+							v-model="reply"
+							:rows="4"
+							:disabled="sending"
+							placeholder="Add more detail or reply to our team"
+							class="w-full"
+						/>
+						<div class="mt-3 flex items-center justify-end gap-3">
+							<TurnstileWidget
+								v-if="turnstileActive"
+								ref="turnstileRef"
+								@received-token="turnstileToken = $event"
+							/>
+							<UButton
+								color="primary"
+								icon="mdi:send"
+								:loading="sending"
+								:disabled="!reply.trim() || (turnstileActive && !turnstileToken)"
+								@click="sendReply"
+							>
+								Send Reply
+							</UButton>
 						</div>
-						<p class="mt-2 whitespace-pre-wrap text-sm text-default">{{ message.message }}</p>
 					</UCard>
-				</div>
-				<UCard v-else>
-					<p class="py-4 text-center text-sm text-muted">
-						No updates yet. We'll email you when there's news.
-					</p>
-				</UCard>
-			</div>
+				</template>
+
+				<template #actions>
+					<TicketReopen
+						v-if="canReopen"
+						:ticket-id="ticket.id"
+						:token="token"
+						:turnstile="turnstileActive ? turnstileToken : undefined"
+						@reopened="refresh"
+					/>
+				</template>
+			</TicketConversation>
 		</div>
 	</div>
 </template>
 
 <script setup lang="ts">
+import type {
+	Ticket,
+	TicketEvent,
+	TicketMessage,
+	TicketPriority,
+	TicketStatus,
+	TicketVisibility
+} from '~/shared/types/ticket';
+
 definePageMeta({ layout: 'default' });
 
-type StatusMessage = { message: string; sender_kind: string; created_at: string | number | Date };
 type StatusTicket = {
 	id: number;
 	title: string;
-	status: string;
-	priority: string;
+	description: string;
+	status: TicketStatus;
+	priority: TicketPriority;
+	visibility: TicketVisibility;
+	color: string | null;
+	icon: string | null;
 	created_at: string | number | Date;
 	updated_at: string | number | Date;
-	messages: StatusMessage[];
+	locked?: boolean;
+	archived?: boolean;
+	archived_at?: string | number | Date | null;
+	creator: { name?: string; email?: string } | null;
+	can_reopen?: boolean;
+	can_reply?: boolean;
+	messages: TicketMessage[];
+	events?: TicketEvent[];
 };
 
 const route = useRoute();
+const { isAuthenticated } = useAuth();
 const token = computed(() => String(route.params.token || ''));
 const id = computed(() => {
 	const raw = route.query.id;
 	return Array.isArray(raw) ? raw[0] : raw;
 });
 
-const { data, pending, error } = await useAsyncData(
+const toast = useToast();
+const { remember } = useMyRequests();
+
+const config = useRuntimeConfig();
+const turnstileActive = computed(() => !!config.public.turnstile?.siteKey);
+const turnstileToken = ref('');
+const turnstileRef = ref<{ reset: () => void } | null>(null);
+
+const { data, pending, error, refresh } = await useAsyncData(
 	() => `public-status:${id.value}:${token.value}`,
 	() =>
 		$fetch<StatusTicket>('/api/public/status', {
@@ -139,33 +182,75 @@ const { data, pending, error } = await useAsyncData(
 
 const ticket = computed(() => data.value);
 
-const statusColor = computed(() => {
-	switch (ticket.value?.status) {
-		case 'closed':
-		case 'wont_fix':
-			return 'neutral';
-		case 'work_in_progress':
-		case 'open':
-			return 'info';
-		case 'pending':
-			return 'warning';
-		default:
-			return 'primary';
+const reply = ref('');
+const sending = ref(false);
+
+// remember any ticket opened via its link (incl. email-created ones) so it shows in My Requests
+watch(
+	ticket,
+	(value) => {
+		if (value)
+			remember({ id: value.id, token: token.value, title: value.title, created_at: Date.now() });
+	},
+	{ immediate: true }
+);
+
+async function sendReply() {
+	const message = reply.value.trim();
+	if (!message) return;
+	sending.value = true;
+	try {
+		await $fetch('/api/public/reply', {
+			method: 'POST',
+			body: {
+				id: id.value,
+				token: token.value,
+				message,
+				...(turnstileActive.value ? { turnstile: turnstileToken.value } : {})
+			}
+		});
+		reply.value = '';
+		turnstileToken.value = '';
+		turnstileRef.value?.reset();
+		await refresh();
+		toast.add({
+			title: 'Reply Sent',
+			description: 'Your reply was added to the request.',
+			icon: 'mdi:check-circle',
+			color: 'success',
+			duration: 3000
+		});
+	} catch (e) {
+		toast.add({
+			title: 'Failed to Send Reply',
+			description: extractServerMessage(e, 'Please try again in a moment.'),
+			icon: 'mdi:alert-circle',
+			color: 'error',
+			duration: 4000
+		});
+	} finally {
+		sending.value = false;
 	}
+}
+
+// token holders may reply unless the thread is locked or archived (archived is read-only)
+const canReply = computed(() => {
+	const t = ticket.value;
+	if (!t) return false;
+	return t.can_reply !== false && t.locked !== true && t.archived !== true;
 });
 
-function formatEnum(value: string): string {
-	return value.replace(/_/g, ' ');
-}
+// the staff deletion banner reads archived + archived_at off a Ticket-shaped object
+const bannerTicket = computed<Ticket | null>(() =>
+	ticket.value ? (ticket.value as unknown as Ticket) : null
+);
 
-function formatDate(value: string | number | Date): string {
-	const date = new Date(value);
-	if (Number.isNaN(date.getTime())) return '';
-	return date.toLocaleString(undefined, {
-		dateStyle: 'medium',
-		timeStyle: 'short'
-	});
-}
+// a closed or archived request can be reopened from this page when the owner allows it
+const canReopen = computed(() => {
+	const t = ticket.value;
+	if (!t?.can_reopen) return false;
+	return t.archived === true || t.status === 'closed' || t.status === 'wont_fix';
+});
 
-useSeoMeta({ title: 'Request Status' });
+useSeoMeta({ title: 'Request Status', robots: 'noindex, nofollow' });
 </script>
