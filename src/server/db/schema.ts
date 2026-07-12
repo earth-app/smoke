@@ -127,7 +127,15 @@ export const tickets = sqliteTable(
 		attachments_nonce: blob('attachments_nonce'),
 		attachments_tag: blob('attachments_tag'),
 		attachments_algorithm: text('attachments_algorithm'),
-		attachments_version: integer('attachments_version')
+		attachments_version: integer('attachments_version'),
+
+		// per-message edit history (prior versions), index-aligned with messages
+		history_data: blob('history_data'),
+		history_wrapped_dek: blob('history_wrapped_dek'),
+		history_nonce: blob('history_nonce'),
+		history_tag: blob('history_tag'),
+		history_algorithm: text('history_algorithm'),
+		history_version: integer('history_version')
 	},
 	(table) => [
 		index('idx_tickets_title').on(table.title),
@@ -144,6 +152,35 @@ export const tickets = sqliteTable(
 );
 
 export type DBTicket = typeof tickets.$inferSelect;
+
+// global audit trail; queryable columns are non-pii, `context` holds a json detail blob
+export const auditLog = sqliteTable(
+	'audit_log',
+	{
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		created_at: integer('created_at')
+			.notNull()
+			.default(sql`(strftime('%s', 'now'))`),
+		action: text('action').notNull(),
+		actor_id: text('actor_id'),
+		actor_name: text('actor_name'),
+		target_type: text('target_type'),
+		target_id: text('target_id'),
+		ticket_id: integer('ticket_id'),
+		priority: text('priority'),
+		summary: text('summary'),
+		context: text('context')
+	},
+	(table) => [
+		index('idx_audit_created_at').on(table.created_at),
+		index('idx_audit_action').on(table.action),
+		index('idx_audit_actor_id').on(table.actor_id),
+		index('idx_audit_ticket_id').on(table.ticket_id),
+		index('idx_audit_priority').on(table.priority)
+	]
+);
+
+export type DBAuditLog = typeof auditLog.$inferSelect;
 
 function toShardProvider(binding: unknown): SQLDatabase | null {
 	if (isSQLDatabase(binding)) {
@@ -190,10 +227,24 @@ const SCHEMA_DDL = [
 	`CREATE INDEX IF NOT EXISTS idx_customers_created_at ON customers (created_at)`,
 	`CREATE TABLE IF NOT EXISTS labels (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, color TEXT, created_at INTEGER NOT NULL)`,
 	`CREATE INDEX IF NOT EXISTS idx_labels_name ON labels (name)`,
-	`CREATE TABLE IF NOT EXISTS tickets (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, description TEXT NOT NULL, customer_id INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'open', priority TEXT NOT NULL DEFAULT 'none', labels TEXT, assignees TEXT, private INTEGER NOT NULL DEFAULT 0, messages_data BLOB, messages_wrapped_dek BLOB, messages_nonce BLOB, messages_tag BLOB, messages_algorithm TEXT, messages_version INTEGER, attachments_data BLOB, attachments_wrapped_dek BLOB, attachments_nonce BLOB, attachments_tag BLOB, attachments_algorithm TEXT, attachments_version INTEGER)`,
+	`CREATE TABLE IF NOT EXISTS tickets (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, description TEXT NOT NULL, customer_id INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'open', priority TEXT NOT NULL DEFAULT 'none', labels TEXT, assignees TEXT, private INTEGER NOT NULL DEFAULT 0, messages_data BLOB, messages_wrapped_dek BLOB, messages_nonce BLOB, messages_tag BLOB, messages_algorithm TEXT, messages_version INTEGER, attachments_data BLOB, attachments_wrapped_dek BLOB, attachments_nonce BLOB, attachments_tag BLOB, attachments_algorithm TEXT, attachments_version INTEGER, history_data BLOB, history_wrapped_dek BLOB, history_nonce BLOB, history_tag BLOB, history_algorithm TEXT, history_version INTEGER)`,
 	`CREATE INDEX IF NOT EXISTS idx_tickets_customer_id ON tickets (customer_id)`,
 	`CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets (status)`,
-	`CREATE INDEX IF NOT EXISTS idx_tickets_created_at ON tickets (created_at)`
+	`CREATE INDEX IF NOT EXISTS idx_tickets_created_at ON tickets (created_at)`,
+	// column additions for existing tables; CREATE IF NOT EXISTS never alters a pre-existing table,
+	// so these run per-upgrade (they no-op with a benign "duplicate column" error on fresh dbs)
+	`ALTER TABLE tickets ADD COLUMN history_data BLOB`,
+	`ALTER TABLE tickets ADD COLUMN history_wrapped_dek BLOB`,
+	`ALTER TABLE tickets ADD COLUMN history_nonce BLOB`,
+	`ALTER TABLE tickets ADD COLUMN history_tag BLOB`,
+	`ALTER TABLE tickets ADD COLUMN history_algorithm TEXT`,
+	`ALTER TABLE tickets ADD COLUMN history_version INTEGER`,
+	`CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at INTEGER NOT NULL, action TEXT NOT NULL, actor_id TEXT, actor_name TEXT, target_type TEXT, target_id TEXT, ticket_id INTEGER, priority TEXT, summary TEXT, context TEXT)`,
+	`CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_log (created_at)`,
+	`CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log (action)`,
+	`CREATE INDEX IF NOT EXISTS idx_audit_actor_id ON audit_log (actor_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_audit_ticket_id ON audit_log (ticket_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_audit_priority ON audit_log (priority)`
 ];
 
 let schemaEnsured = false;
@@ -232,6 +283,11 @@ export async function ensureSchema(env: any): Promise<void> {
 			try {
 				await client.run(sql.raw(statement));
 			} catch (error) {
+				// an ALTER ADD COLUMN on a db that already has the column is expected + harmless;
+				// the driver wraps it ("Failed query: ...") with the real reason on .cause
+				const err = error as { message?: string; cause?: { message?: string } };
+				const text = `${err?.message ?? ''} ${err?.cause?.message ?? ''}`;
+				if (/duplicate column name|already exists/i.test(text)) continue;
 				console.warn('ensureSchema statement failed', error);
 			}
 		}
