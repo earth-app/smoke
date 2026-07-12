@@ -115,9 +115,17 @@ export const useUserStore = defineStore('user', () => {
 		}
 	};
 
-	const setAvatar = async (userId: string, avatar: File | Blob | ArrayBuffer | string) => {
+	const setAvatar = async (
+		userId: string,
+		avatar: File | Blob | ArrayBuffer | string | { icon: string }
+	) => {
 		try {
-			let body: FormData | { url: string } | { base64: string } | null = null;
+			let body: FormData | { url: string } | { base64: string } | { icon: string } | null = null;
+
+			// { icon } -> iconify avatar
+			if (typeof avatar === 'object' && avatar !== null && 'icon' in avatar) {
+				body = { icon: avatar.icon };
+			}
 
 			// file, blob, array buffer -> multipart form data
 			if (avatar instanceof File || avatar instanceof Blob) {
@@ -295,6 +303,19 @@ export const useCustomerStore = defineStore('customer', () => {
 		}
 	};
 
+	// mint a portal magic-link for a customer; returns the shareable url
+	const customerMagicLink = async (id: number): Promise<string> => {
+		const { url } = await $fetch<{ url: string; token: string }>(
+			`/api/customers/${id}/magic-link`,
+			{
+				method: 'POST',
+				credentials: 'include',
+				headers: authHeaders()
+			}
+		);
+		return url;
+	};
+
 	return {
 		cache,
 		get,
@@ -303,6 +324,75 @@ export const useCustomerStore = defineStore('customer', () => {
 		fetchCustomer,
 		createCustomer,
 		patchCustomer,
-		deleteCustomer
+		deleteCustomer,
+		customerMagicLink
 	};
+});
+
+export const useCustomerPortalStore = defineStore('customer-portal', () => {
+	// undefined = not yet loaded, null = signed out, Customer = signed in
+	const customer = ref<Customer | null | undefined>(undefined);
+	const isLoading = ref(false);
+	const fetchPromise = ref<Promise<Customer | null> | null>(null);
+
+	const isCustomer = computed(() => !!customer.value);
+
+	// the session cookie is httpOnly and isn't forwarded to internal ssr fetches, so hydrate
+	// on the client only; a server fetch would cache a false null and block the real client fetch
+	const fetchCustomer = async (force: boolean = false): Promise<Customer | null> => {
+		if (import.meta.server) return null;
+		if (fetchPromise.value) return fetchPromise.value;
+		if (customer.value !== undefined && !force) return customer.value;
+
+		isLoading.value = true;
+		fetchPromise.value = (async () => {
+			try {
+				const response = await $fetch<{ customer: Customer | null }>('/api/portal/me', {
+					cache: 'no-store',
+					credentials: 'include'
+				});
+				customer.value = response.customer ?? null;
+				return customer.value;
+			} catch (error) {
+				console.error('Failed to fetch customer:', error);
+				customer.value = null;
+				return null;
+			} finally {
+				isLoading.value = false;
+				fetchPromise.value = null;
+			}
+		})();
+
+		return fetchPromise.value;
+	};
+
+	const requestOtp = async (email: string, turnstile?: string): Promise<void> => {
+		await $fetch('/api/portal/request-otp', {
+			method: 'POST',
+			body: { email, ...(turnstile ? { turnstile } : {}) },
+			credentials: 'include'
+		});
+	};
+
+	const verifyOtp = async (email: string, code: string): Promise<Customer> => {
+		const response = await $fetch<{ customer: Customer }>('/api/portal/verify-otp', {
+			method: 'POST',
+			body: { email, code },
+			credentials: 'include'
+		});
+		customer.value = response.customer;
+		return response.customer;
+	};
+
+	const logout = async (): Promise<void> => {
+		try {
+			await $fetch('/api/portal/logout', { method: 'POST', credentials: 'include' });
+		} catch (error) {
+			console.error('Customer logout failed:', error);
+		} finally {
+			customer.value = null;
+		}
+	};
+
+	return { customer, isLoading, isCustomer, fetchCustomer, requestOtp, verifyOtp, logout };
 });
