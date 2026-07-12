@@ -13,7 +13,17 @@ export default defineEventHandler(async (event) => {
 	const { username, email } = await readValidatedBody(event, schemas.userCreateBody.parse);
 
 	try {
-		await createUser(username, email, Role.Agent, event.context.cloudflare.env);
+		const created = await createUser(username, email, Role.Agent, event.context.cloudflare.env);
+		const agent = await getUserById(created.id, event.context.cloudflare.env).catch(() => null);
+		await runTicketFlows(
+			{
+				trigger: 'agent.created',
+				agent: agent
+					? { id: agent.id, username: agent.username, name: agent.name, role: agent.role }
+					: { id: created.id, username }
+			},
+			event.context.cloudflare.env
+		).catch(() => {});
 	} catch (error) {
 		throw createError({
 			statusCode: 500,
