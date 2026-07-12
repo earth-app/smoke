@@ -22,16 +22,27 @@ export default defineEventHandler(async (event) => {
 	}
 
 	const { send } = await import('edgeport/smtp');
-	await send({
-		hostname: transport.hostname,
-		port: transport.port,
-		tls: transport.tls,
-		auth: transport.auth,
-		from: transport.from,
-		to: body.to,
-		subject: 'Smoke Test Email',
-		text: 'This is a test email from your Smoke support desk.'
-	});
+	try {
+		await send({
+			hostname: transport.hostname,
+			port: transport.port,
+			tls: transport.tls,
+			auth: transport.auth,
+			from: transport.from,
+			to: body.to,
+			subject: 'Smoke Test Email',
+			text: 'This is a test email from your Smoke support desk.'
+		});
+	} catch (error) {
+		// a bad/placeholder transport (e.g. an invalid Cloudflare token) must surface as a clean
+		// 422, not an unhandled 500 - the message helps the owner fix their credentials
+		const message = error instanceof Error ? error.message : String(error);
+		throw createError({
+			statusCode: 422,
+			message: `Test email failed: ${message}`,
+			data: { success: false }
+		});
+	}
 
 	return { success: true };
 });
