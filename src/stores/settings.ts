@@ -67,10 +67,27 @@ export const useSettingsStore = defineStore('settings', () => {
 		}
 	};
 
+	// merge a partial email config into the persisted one so independent cards (outbound smtp,
+	// inbound poll) never clobber each other; the server replaces the whole email blob on save
+	const saveEmail = async (partial: Record<string, any>): Promise<Settings> => {
+		const current = { ...((settings.value?.email as Record<string, any>) || {}) };
+		const merged: Record<string, any> = { ...current, ...partial };
+		if (current.smtp || partial.smtp) {
+			merged.smtp = { ...(current.smtp || {}), ...(partial.smtp || {}) };
+			delete merged.smtp.has_password;
+		}
+		if (current.poll || partial.poll) {
+			merged.poll = { ...(current.poll || {}), ...(partial.poll || {}) };
+			delete merged.poll.has_password;
+		}
+		return await save({ email: merged });
+	};
+
 	return {
 		settings,
 		fetch,
 		save,
+		saveEmail,
 		sendTestEmail
 	};
 });
