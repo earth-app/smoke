@@ -14,7 +14,10 @@ export default defineEventHandler(async (event) => {
 	const body = await readValidatedBody(event, schemas.ticketCreateBody.parse);
 
 	try {
-		return await createTicket(body, event.context.cloudflare.env);
+		return await createTicket(
+			body as Parameters<typeof createTicket>[0],
+			event.context.cloudflare.env
+		);
 	} catch (error) {
 		throw createError({
 			statusCode: 500,

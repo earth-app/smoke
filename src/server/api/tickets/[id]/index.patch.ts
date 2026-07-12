@@ -27,8 +27,27 @@ export default defineEventHandler(async (event) => {
 
 	const body = await readValidatedBody(event, schemas.ticketPatchBody.parse);
 
+	// archived is read-only; the only edit allowed is unarchiving (a body that ONLY sets archived: false)
+	if (ticket.archived) {
+		const keys = Object.keys(body).filter(
+			(key) => (body as Record<string, unknown>)[key] !== undefined
+		);
+		const unarchiveOnly = keys.length === 1 && keys[0] === 'archived' && body.archived === false;
+		if (!unarchiveOnly) {
+			throw createError({
+				statusCode: 423,
+				message: 'Unarchive this ticket before editing it.'
+			});
+		}
+	}
+
 	try {
-		return await patchTicket(id, body, event.context.cloudflare.env);
+		return await patchTicket(
+			id,
+			body as Parameters<typeof patchTicket>[1],
+			event.context.cloudflare.env,
+			{ actorId: user.id }
+		);
 	} catch (error) {
 		if (typeof error === 'object' && error !== null && 'statusCode' in error) {
 			throw error;
