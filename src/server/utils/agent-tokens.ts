@@ -83,10 +83,8 @@ export function inviteStatus(invite: AgentInvite | null): AgentInviteStatus {
 
 export async function createAgentInvite(
 	options: { email?: string; createdBy: string; ttlMinutes?: number; maxUses?: number },
-	// env reserved for a future setting-overridable default ttl; kept for a stable signature
 	env: any
 ): Promise<{ token: string; invite: AgentInvite }> {
-	void env;
 	const ttlMinutes = clamp(
 		Math.round(options.ttlMinutes ?? DEFAULT_INVITE_TTL_MINUTES),
 		1,
@@ -107,6 +105,16 @@ export async function createAgentInvite(
 	};
 
 	await kv.set(inviteKey(token), JSON.stringify(invite), { ttl: ttlMinutes * 60 });
+
+	await recordAudit(env, {
+		action: 'auth.invite_issued',
+		actorId: options.createdBy,
+		targetType: 'invite',
+		priority: 'normal',
+		summary: `Issued an agent invite${invite.email ? ` for ${invite.email}` : ''}`,
+		context: { bound: Boolean(invite.email), maxUses: invite.maxUses, expires: invite.expires }
+	});
+
 	return { token, invite };
 }
 
@@ -119,7 +127,6 @@ export async function getAgentInvite(token: string): Promise<AgentInvite | null>
 
 // increment uses; delete once exhausted or expired. throws if it wasn't consumable
 export async function consumeAgentInvite(token: string, env: any): Promise<AgentInvite> {
-	void env;
 	const invite = await getAgentInvite(token);
 	const status = inviteStatus(invite);
 	if (status !== 'valid') {
@@ -135,6 +142,15 @@ export async function consumeAgentInvite(token: string, env: any): Promise<Agent
 		const remaining = Math.max(1, Math.ceil((updated.expires - Date.now()) / 1000));
 		await kv.set(inviteKey(token), JSON.stringify(updated), { ttl: remaining });
 	}
+
+	await recordAudit(env, {
+		action: 'auth.invite_consumed',
+		actorId: updated.createdBy,
+		targetType: 'invite',
+		priority: 'normal',
+		summary: 'An agent invite was used to join',
+		context: { usesRemaining: Math.max(0, updated.maxUses - updated.uses) }
+	});
 
 	return updated;
 }
@@ -168,6 +184,15 @@ export async function requestAgentPasswordReset(email: string, env: any): Promis
 	const record: ResetRecord = { code, expires: Date.now() + RESET_TTL_SECONDS * 1000, attempts: 0 };
 	await kv.set(resetKey(emailHash), JSON.stringify(record), { ttl: RESET_TTL_SECONDS });
 	await kv.set(resetCooldownKey(emailHash), '1', { ttl: RESET_COOLDOWN_SECONDS });
+
+	await recordAudit(env, {
+		action: 'auth.password_reset_requested',
+		actorId: user.id,
+		targetType: 'user',
+		targetId: user.id,
+		priority: 'normal',
+		summary: 'A staff password reset code was requested'
+	});
 
 	const subject = 'Your Password Reset Code';
 	const body =
