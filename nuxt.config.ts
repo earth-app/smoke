@@ -6,7 +6,22 @@ const E2E_BUILD = process.env.NUXT_PUBLIC_E2E === '1';
 
 export default defineNuxtConfig({
 	site: {
-		url: process.env.NUXT_PUBLIC_SITE_URL || 'https://smoke.pages.dev'
+		url: process.env.NUXT_PUBLIC_SITE_URL || 'https://smoke.pages.dev',
+		name: process.env.NUXT_PUBLIC_SITE_NAME || 'Smoke'
+	},
+	schemaOrg: {
+		identity: {
+			type: 'Organization',
+			name: process.env.NUXT_PUBLIC_SITE_NAME || 'Smoke',
+			logo: '/favicon.png'
+		}
+	},
+	robots: {
+		// token status pages + staff/setup/api surfaces stay out of the index
+		disallow: ['/dashboard', '/setup', '/login', '/status', '/api']
+	},
+	sitemap: {
+		exclude: ['/dashboard/**', '/setup', '/login', '/status/**']
 	},
 	runtimeConfig: {
 		// mock the cloudflare api in non-prod e2e so provisioning flows are testable offline
@@ -14,7 +29,11 @@ export default defineNuxtConfig({
 		public: {
 			site_url: process.env.NUXT_PUBLIC_SITE_URL,
 			// gates the hydration marker used by playwright waitForHydration
-			e2e: process.env.NUXT_PUBLIC_E2E === '1'
+			e2e: process.env.NUXT_PUBLIC_E2E === '1',
+			// favicon/theme fallbacks; the favicon.* routes resolve kv settings then fall back to these
+			themeColor: process.env.NUXT_PUBLIC_THEME_COLOR || '#3b82f6',
+			favicon: process.env.NUXT_PUBLIC_FAVICON || '/_favicon.ico',
+			faviconPng: process.env.NUXT_PUBLIC_FAVICON_PNG || '/_favicon.png'
 		},
 		turnstile: {
 			secretKey: process.env.NUXT_TURNSTILE_SECRET_KEY || ''
@@ -44,14 +63,22 @@ export default defineNuxtConfig({
 				'prosemirror-state',
 				'prosemirror-view',
 				'prosemirror-model',
-				'prosemirror-transform'
+				'prosemirror-transform',
+				'@tiptap/core',
+				'@tiptap/extension-emoji',
+				'@tiptap/extension-text-align',
+				'marked',
+				'highlight.js'
 			]
 		}
 	},
 	hub: {
+		dir: process.env.NUXT_HUB_DIR || '.data',
 		blob: true,
 		cache: true,
-		kv: true,
+		kv: process.env.NUXT_HUB_DIR
+			? { driver: 'fs-lite', base: `${process.env.NUXT_HUB_DIR}/kv` }
+			: true,
 		db: 'sqlite'
 	},
 	$production: {
@@ -70,7 +97,11 @@ export default defineNuxtConfig({
 			tasks: true
 		},
 		scheduledTasks: {
-			'*/15 * * * *': ['email:poll']
+			'*/15 * * * *': ['email:poll'],
+			// daily retention sweep: auto-archive aged closed tickets, purge if delete is enabled
+			'0 3 * * *': ['retention:cleanup'],
+			// daily audit-log prune per the configured retention window (no-op when unset)
+			'30 3 * * *': ['audit:cleanup']
 		},
 		prerender: {
 			ignore: ['/api/**']
@@ -78,7 +109,8 @@ export default defineNuxtConfig({
 		routeRules: {
 			'/api/**': { prerender: false, cors: true },
 			'/favicon.png': { headers: { 'Cache-Control': 'public, max-age=31536000' } },
-			'/favicon.ico': { headers: { 'Cache-Control': 'public, max-age=31536000' } }
+			'/favicon.ico': { headers: { 'Cache-Control': 'public, max-age=31536000' } },
+			'/favicon.svg': { headers: { 'Cache-Control': 'public, max-age=31536000' } }
 		}
 	},
 	modules: [
@@ -144,6 +176,11 @@ export default defineNuxtConfig({
 					fit: 'cover'
 				}
 			}
+		}
+	},
+	hints: {
+		features: {
+			lazyLoad: false
 		}
 	},
 	nuxtApiShield: {
