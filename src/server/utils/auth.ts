@@ -272,6 +272,16 @@ export async function logIn(
 	const sessionToken = await createSessionToken(user.id);
 	const decryptedUser = await decryptUser(user, env.MASTER_KEY);
 
+	await recordAudit(env, {
+		action: 'auth.login',
+		actorId: decryptedUser.id,
+		actorName: displayName(decryptedUser) || decryptedUser.username,
+		targetType: 'user',
+		targetId: decryptedUser.id,
+		priority: 'low',
+		summary: `Signed in as @${decryptedUser.username}`
+	});
+
 	return { user: decryptedUser, sessionToken };
 }
 
@@ -303,4 +313,13 @@ export async function logOut(event: H3Event): Promise<void> {
 
 	await kv.del(`smoke:session_token_user:${lookup.tokenHash}`);
 	await kv.del(`smoke:session_token_hash:${lookup.userId}:${lookup.tokenHash}`);
+
+	await recordAudit(event.context.cloudflare.env, {
+		action: 'auth.logout',
+		actorId: lookup.userId,
+		targetType: 'user',
+		targetId: lookup.userId,
+		priority: 'low',
+		summary: 'Signed out'
+	});
 }
