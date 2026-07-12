@@ -140,6 +140,9 @@ export async function createUser(
 
 	const sessionToken = await createSessionToken(id);
 
+	// a new account changes what the user list returns
+	await clearCachePrefix(USER_LIST_PREFIX);
+
 	await recordAudit(env, {
 		action: 'user.created',
 		actorId: opts?.actorId ?? null,
@@ -282,11 +285,19 @@ export async function patchUser(
 		]);
 	}
 
-	await kv.del(`smoke:cache:user_id:${user.id}`);
-	await kv.del(`smoke:cache:user_username:${user.username}`);
-	if (updates.username && updates.username !== user.username) {
-		await kv.del(`smoke:cache:user_username:${updates.username}`);
+	// email-keyed cache holds the full user (role/perms too), so bust the current email always and the
+	// new one when it changed; getUserByEmail would otherwise resolve the old email to this user for 4h
+	const emailHashes: (string | undefined)[] = [];
+	if (user.email)
+		emailHashes.push(await hmacSha256(env.HMAC_SECRET, user.email.trim().toLowerCase()));
+	if (updates.email && updates.email !== user.email) {
+		emailHashes.push(await hmacSha256(env.HMAC_SECRET, updates.email.trim().toLowerCase()));
 	}
+
+	await invalidateUser(user.id, {
+		usernames: [user.username, updates.username],
+		emailHashes
+	});
 
 	await recordAudit(env, {
 		action: 'user.updated',
@@ -306,7 +317,7 @@ export async function deleteUser(userId: string, opts?: AuditOpts): Promise<void
 	await Promise.allSettled([
 		run(userId, `DELETE FROM users WHERE id = ?`, [userId]),
 		deleteSessionTokens(userId),
-		kv.del(`smoke:cache:user_id:${userId}`)
+		invalidateUser(userId)
 	]);
 
 	await recordAudit(opts?.env, {
@@ -330,7 +341,7 @@ export async function listUsers(
 	sort_direction: 'asc' | 'desc'
 ): Promise<User[]> {
 	const masterKey = env.MASTER_KEY;
-	const cacheKey = `smoke:cache:user:list:${search}:${page}:${limit}:${sort}:${sort_direction}`;
+	const cacheKey = `${USER_LIST_PREFIX}${search}:${page}:${limit}:${sort}:${sort_direction}`;
 	const sortableFields: Array<keyof User> = [
 		'id',
 		'username',
@@ -365,7 +376,7 @@ const USER_LIST_COLUMNS = `id, username, created_at, updated_at, data, wrapped_d
 const USER_FETCH_COLUMNS = `${USER_LIST_COLUMNS}, password_hash, password_salt, password_algorithm`;
 
 export async function getUserById(id: string, env: any): Promise<User | null> {
-	const cacheKey = `smoke:cache:user_id:${id}`;
+	const cacheKey = userIdKey(id);
 	return await cache(
 		cacheKey,
 		async () => {
@@ -383,7 +394,7 @@ export async function getUserById(id: string, env: any): Promise<User | null> {
 }
 
 export async function getUserByUsername(username: string, env: any): Promise<User | null> {
-	const cacheKey = `smoke:cache:user_username:${username}`;
+	const cacheKey = userUsernameKey(username);
 	return await cache(
 		cacheKey,
 		async () => {
@@ -404,7 +415,7 @@ export async function getUserByEmail(email: string, env: any): Promise<User | nu
 	const email0 = email.trim().toLowerCase();
 	const emailLookupHash = await hmacSha256(env.HMAC_SECRET, email0);
 
-	const cacheKey = `smoke:cache:user_email:${emailLookupHash}`;
+	const cacheKey = userEmailKey(emailLookupHash);
 	return await cache(
 		cacheKey,
 		async () => {

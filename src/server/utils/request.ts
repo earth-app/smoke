@@ -1,28 +1,5 @@
 import type { H3Event } from 'h3';
 
-export async function cache<T>(
-	key: string,
-	fetcher: () => Promise<T>,
-	ttlSeconds: number = 60
-): Promise<T> {
-	const cached = await kv.get<string>(key);
-	if (typeof cached === 'string') {
-		try {
-			return JSON.parse(cached) as T;
-		} catch (error) {
-			await kv.del(key);
-			console.warn(
-				`Failed to parse cached data for key ${key}. Cache entry deleted. Error:`,
-				error
-			);
-		}
-	}
-
-	const data = await fetcher();
-	await kv.set(key, JSON.stringify(data), { ttl: ttlSeconds });
-	return data;
-}
-
 export function primitiveQuery(event: H3Event, sortFields: string[] = ['created_at']) {
 	const { search, sort, sort_direction } = getQuery(event);
 

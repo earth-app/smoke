@@ -144,6 +144,8 @@ export async function createCustomer(
 	if (input.email) await setCustomerEmailLookup(input.email, nextId, env);
 
 	const created = await decryptCustomer(createdRow, env.MASTER_KEY);
+	// a new customer changes what the customer list returns
+	await clearCachePrefix(CUSTOMER_LIST_PREFIX);
 	await recordAudit(env, {
 		action: 'customer.created',
 		actorId: actor?.id ?? null,
@@ -220,7 +222,7 @@ export async function patchCustomer(
 		});
 	}
 
-	await kv.del(`smoke:cache:customer_id:${id}`);
+	await invalidateCustomer(id);
 	const updated = await decryptCustomer(updatedRow, env.MASTER_KEY);
 	await recordAudit(env, {
 		action: 'customer.updated',
@@ -248,7 +250,7 @@ export async function deleteCustomer(
 		await deleteCustomerEmailLookup(decrypted.email, env);
 	}
 	await run(id.toString(), `DELETE FROM customers WHERE id = ?`, [id]);
-	await kv.del(`smoke:cache:customer_id:${id}`);
+	await invalidateCustomer(id);
 	await recordAudit(env, {
 		action: 'customer.deleted',
 		actorId: actor?.id ?? null,
@@ -270,7 +272,7 @@ export async function listCustomers(
 	sort_direction: 'asc' | 'desc'
 ): Promise<Customer[]> {
 	const masterKey = env.MASTER_KEY;
-	const cacheKey = `smoke:cache:customer:list:${search}:${page}:${limit}:created_at:${sort_direction}`;
+	const cacheKey = `${CUSTOMER_LIST_PREFIX}${search}:${page}:${limit}:created_at:${sort_direction}`;
 
 	return await cache(cacheKey, async () => {
 		const result = await allAllShardsGlobal<DBCustomer>('SELECT * FROM customers', []);
@@ -300,7 +302,7 @@ export async function listCustomers(
 export async function getCustomerById(id: number, env: any): Promise<Customer | null> {
 	ensureCollegeDB(env);
 	return await cache(
-		`smoke:cache:customer_id:${id}`,
+		customerIdKey(id),
 		async () => {
 			const customer = await getCustomerRowById(id);
 			if (!customer) return null;

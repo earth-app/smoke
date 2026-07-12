@@ -1194,7 +1194,7 @@ export async function listTickets(
 ): Promise<Ticket[]> {
 	ensureCollegeDB(env);
 
-	const cacheKey = `smoke:cache:tickets:${search}:${page}:${limit}:${sort}:${sort_direction}`;
+	const cacheKey = `${TICKET_LIST_PREFIX}${search}:${page}:${limit}:${sort}:${sort_direction}`;
 	return await cache(cacheKey, async () => {
 		const bindings: Array<string | number> = [];
 		const clauses: string[] = [];
@@ -1233,7 +1233,7 @@ export async function getTicketById(
 ): Promise<Ticket | null> {
 	ensureCollegeDB(env);
 	const hydrated = await cache(
-		`smoke:cache:ticket_id:${id}`,
+		ticketIdKey(id),
 		async () => {
 			const row = await getTicketRowById(id);
 			if (!row) return null;
@@ -1249,7 +1249,8 @@ export async function getTicketById(
 }
 
 async function invalidateTicketCache(id: number): Promise<void> {
-	await kv.del(`smoke:cache:ticket_id:${id}`);
+	// a ticket write also shifts the list + the ticket-derived analytics summary
+	await invalidateTicket(id);
 }
 
 export async function getTicketsByPriority(priority: TicketPriority, env: any): Promise<Ticket[]> {

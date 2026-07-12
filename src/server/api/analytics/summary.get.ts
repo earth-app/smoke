@@ -46,7 +46,7 @@ export default defineEventHandler(async (event) => {
 	const { range } = rangeSchema.parse(getQuery(event));
 
 	return await cache(
-		`smoke:cache:analytics:${range}`,
+		`${ANALYTICS_PREFIX}${range}`,
 		async () => {
 			const tickets = await listTickets(env, '', 1, 100, 0, 'created_at', 'desc', current);
 
