@@ -14,7 +14,7 @@
 				</p>
 				<UButton
 					class="hover:cursor-pointer"
-					@click="$router.push('/')"
+					@click="handleHome"
 				>
 					Go Back Home
 				</UButton>
@@ -25,4 +25,9 @@
 
 <script setup lang="ts">
 const error = useError();
+
+// reset the error boundary then head home
+function handleHome() {
+	clearError({ redirect: '/' });
+}
 </script>
