@@ -40,6 +40,9 @@ export default defineNuxtConfig({
 		}
 	},
 	ssr: true,
+	// the coverage build needs client+server sourcemaps so monocart can unpack _nuxt/*.js back to
+	// src/* (codecov matches coverage by repo-relative source path, not by dist url)
+	...(E2E_BUILD ? { sourcemap: { client: true, server: true } } : {}),
 	compatibilityDate: '2025-12-13',
 	devtools: { enabled: process.env.NODE_ENV === 'development' },
 	srcDir: 'src',

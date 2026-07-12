@@ -30,10 +30,21 @@ const reporters: any[] =
 								if (url.includes('node_modules')) return false;
 								if (url.includes('/_nuxt/builds/')) return false;
 								if (url.startsWith('chrome-extension:')) return false;
-								return url.includes('/_nuxt/') || url.startsWith(BASE_URL);
+								// only the hashed js chunks carry sourcemapped app code; the page-document
+								// navigations (BASE_URL/...) have no source mapping and would otherwise report
+								// as unmatched dist urls that codecov can't place on the repo tree
+								return url.includes('/_nuxt/');
 							},
 							sourceFilter: (path: string) =>
-								path.includes('src/') && !path.includes('node_modules')
+								path.includes('src/') && !path.includes('node_modules'),
+							// codecov matches coverage onto the repo tree by repo-relative path, so every
+							// unpacked source must come out as `src/...`; sourcemap sources can be absolute
+							// in CI (/home/runner/work/smoke/smoke/src/...) or carry a virtual prefix, so
+							// trim everything up to the first src/ segment
+							sourcePath: (filePath: string) => {
+								const i = filePath.indexOf('src/');
+								return i >= 0 ? filePath.slice(i) : filePath;
+							}
 						}
 					}
 				]

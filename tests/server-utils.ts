@@ -6,6 +6,7 @@ import * as agentTokens from '~/server/utils/agent-tokens';
 import * as ai from '~/server/utils/ai';
 import * as audit from '~/server/utils/audit';
 import * as auth from '~/server/utils/auth';
+import * as cache from '~/server/utils/cache';
 import * as cloudflare from '~/server/utils/cloudflare';
 import * as customFields from '~/server/utils/custom-fields';
 import * as customer from '~/server/utils/customer';
@@ -37,6 +38,7 @@ const modules = [
 	faviconProxy,
 	flows,
 	request,
+	cache,
 	ai,
 	audit,
 	auth,
@@ -70,6 +72,7 @@ export * from '~/server/utils/agent-tokens';
 export * from '~/server/utils/ai';
 export * from '~/server/utils/audit';
 export * from '~/server/utils/auth';
+export * from '~/server/utils/cache';
 export * from '~/server/utils/cloudflare';
 export * from '~/server/utils/custom-fields';
 export * from '~/server/utils/customer';
