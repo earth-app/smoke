@@ -595,7 +595,11 @@ export async function runTicketFlows(event: FlowEvent, env: any): Promise<void> 
 				if (ticket) {
 					const updates = buildUpdates(flow.actions, ticket);
 					if (Object.keys(updates).length > 0) {
-						ticket = await patchTicket(ticket.id, updates, env, { skipFlows: true });
+						// attribute the resulting timeline events to this flow (skipFlows still prevents recursion)
+						ticket = await patchTicket(ticket.id, updates, env, {
+							skipFlows: true,
+							actorFlow: { id: flow.id, name: flow.name }
+						});
 					}
 				}
 
