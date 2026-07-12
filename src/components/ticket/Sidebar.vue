@@ -9,9 +9,9 @@
 				:to="`/dashboard/customers/${customer.id}`"
 				class="flex items-center gap-3 hover:opacity-80"
 			>
-				<UAvatar
-					:src="customer.avatar_url"
-					:alt="customer.name || customer.email"
+				<Avatar
+					:avatar="customer.avatar_url"
+					:name="customer.name || customer.email"
 					size="sm"
 				/>
 				<div class="min-w-0">
@@ -54,26 +54,13 @@
 				label="Labels"
 				size="sm"
 			>
-				<USelectMenu
+				<TicketLabelPicker
 					:model-value="selectedLabelIds"
-					:items="labelItems"
-					value-key="value"
-					multiple
+					:labels="labels"
 					:disabled="!canChangeLabels"
-					placeholder="Add labels"
-					class="w-full"
-					@update:model-value="(v) => emitPatch({ labels: v as number[] })"
+					@update:model-value="(v) => emitPatch({ labels: v })"
+					@labels-changed="() => emit('labelsChanged')"
 				/>
-				<div
-					v-if="ticketLabels.length"
-					class="mt-2 flex flex-wrap gap-1"
-				>
-					<LabelBadge
-						v-for="label in ticketLabels"
-						:key="label.id"
-						:label="label"
-					/>
-				</div>
 			</UFormField>
 
 			<UFormField
@@ -89,29 +76,106 @@
 					placeholder="Assign teammates"
 					class="w-full"
 					@update:model-value="(v) => emitPatch({ assignee_ids: v as string[] })"
+				>
+					<template #item-leading="{ item }">
+						<Avatar
+							:avatar="item.user.avatar_url"
+							:id="item.user.id"
+							:role="item.user.role"
+							:name="item.user.username"
+							size="2xs"
+						/>
+					</template>
+				</USelectMenu>
+			</UFormField>
+
+			<UFormField
+				v-if="canTogglePrivate"
+				label="Visibility"
+				size="sm"
+			>
+				<USelect
+					:model-value="ticket.visibility"
+					:items="visibilityItems"
+					class="w-full"
+					@update:model-value="(v) => emitPatch({ visibility: v as TicketVisibility })"
 				/>
 			</UFormField>
 
-			<div
-				v-if="canTogglePrivate"
-				class="flex items-center justify-between"
+			<UFormField
+				label="Projects"
+				size="sm"
 			>
-				<div>
-					<p class="text-sm font-medium">Private</p>
-					<p class="text-xs text-slate-500">Hide this ticket from customers.</p>
-				</div>
-				<USwitch
-					:model-value="ticket.private"
-					@update:model-value="(v) => emitPatch({ private: Boolean(v) })"
+				<TicketProjectSelect
+					:model-value="ticket.project_ids ?? []"
+					:disabled="!canManage"
+					@update:model-value="(v) => emitPatch({ project_ids: v as number[] })"
 				/>
+			</UFormField>
+
+			<UFormField
+				label="Icon"
+				size="sm"
+			>
+				<TicketIconSelect
+					:model-value="ticket.icon"
+					:color="ticket.color"
+					:disabled="!canManage"
+					@update:model-value="(v) => emitPatch({ icon: v })"
+				/>
+			</UFormField>
+
+			<div class="grid grid-cols-2 gap-3">
+				<UFormField
+					label="Color"
+					size="sm"
+				>
+					<input
+						type="color"
+						:value="ticket.color || '#64748b'"
+						:disabled="!canManage"
+						class="h-9 w-full cursor-pointer rounded border border-slate-200 dark:border-slate-700"
+						@change="(e) => emitPatch({ color: (e.target as HTMLInputElement).value })"
+					/>
+				</UFormField>
+				<UFormField
+					label="Deadline"
+					size="sm"
+				>
+					<UInput
+						type="date"
+						:model-value="deadlineValue"
+						:disabled="!canManage"
+						class="w-full"
+						@update:model-value="(v) => emitPatch({ deadline: v ? String(v) : null })"
+					/>
+				</UFormField>
 			</div>
+		</div>
+
+		<TicketParticipants
+			:ticket-id="ticket.id"
+			:customer-email="customer?.email"
+			:participants="ticket.participants ?? []"
+		/>
+
+		<div
+			v-if="hasCustomFields"
+			class="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+		>
+			<p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Custom Fields</p>
+			<TicketCustomFields
+				:model-value="ticket.custom_fields || {}"
+				:disabled="!canManage"
+				@update:model-value="(v) => emitPatch({ custom_fields: v as Record<string, string> })"
+			/>
 		</div>
 	</div>
 </template>
 
 <script setup lang="ts">
 import type { Ticket, TicketPatchInput } from '~/shared/types/ticket';
-import { TicketPriority, TicketStatus } from '~/shared/types/ticket';
+import { TicketPriority, TicketStatus, TicketVisibility } from '~/shared/types/ticket';
 import type { Customer, Label, User } from '~/shared/types/user';
 import { Permission } from '~/shared/types/user';
 
@@ -122,7 +186,7 @@ const props = defineProps<{
 	users: User[];
 }>();
 
-const emit = defineEmits<{ patch: [body: TicketPatchInput] }>();
+const emit = defineEmits<{ patch: [body: TicketPatchInput]; labelsChanged: [] }>();
 
 const { can, isAdmin } = useAuth();
 
@@ -130,39 +194,27 @@ const canManage = computed(() => isAdmin.value || can(Permission.ManageTicket));
 const canChangeLabels = computed(() => isAdmin.value || can(Permission.ChangeLabels));
 const canTogglePrivate = computed(() => isAdmin.value || can(Permission.TogglePrivate));
 
-const statusItems = Object.values(TicketStatus).map((value) => ({
-	label: statusLabel(value),
-	value
-}));
+const { fields: customFieldDefs } = useCustomFields();
+const hasCustomFields = computed(() => customFieldDefs.value.length > 0);
 
-const priorityItems = Object.values(TicketPriority).map((value) => ({
-	label: value.charAt(0).toUpperCase() + value.slice(1),
-	value
-}));
+// enum dropdowns carry a leading icon via the shared display maps
+const statusItems = statusSelectItems();
+const priorityItems = prioritySelectItems();
+const visibilityItems = visibilitySelectItems();
 
-const labelItems = computed(() =>
-	props.labels.map((label) => ({ label: label.name, value: label.id }))
+// a date input wants YYYY-MM-DD; the ticket stores an iso timestamp
+const deadlineValue = computed(() =>
+	props.ticket.deadline ? new Date(props.ticket.deadline).toISOString().slice(0, 10) : ''
 );
+
 const selectedLabelIds = computed(() => props.ticket.labels || []);
-const ticketLabels = computed<Label[]>(() =>
-	selectedLabelIds.value
-		.map((id) => props.labels.find((l) => l.id === id))
-		.filter((l): l is Label => !!l)
-);
 
 const assigneeItems = computed(() =>
-	props.users.map((user) => ({ label: user.name || user.username, value: user.id }))
+	props.users.map((user) => ({ label: user.name || user.username, value: user.id, user }))
 );
 const selectedAssigneeIds = computed(() => props.ticket.assignees.map((a) => a.id));
 
 function emitPatch(body: TicketPatchInput) {
 	emit('patch', body);
-}
-
-function statusLabel(value: TicketStatus): string {
-	return value
-		.split('_')
-		.map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-		.join(' ');
 }
 </script>

@@ -11,11 +11,18 @@
 <script setup lang="ts">
 import { TicketStatus } from '~/shared/types/ticket';
 
-const props = withDefaults(defineProps<{ status: TicketStatus; size?: string }>(), {
-	size: 'sm'
-});
+const props = withDefaults(
+	defineProps<{ status: TicketStatus; size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' }>(),
+	{
+		size: 'sm'
+	}
+);
 
-type Meta = { label: string; color: string; icon: string };
+type Meta = {
+	label: string;
+	color: 'primary' | 'secondary' | 'success' | 'info' | 'warning' | 'error' | 'neutral';
+	icon: string;
+};
 
 const STATUS_META: Record<TicketStatus, Meta> = {
 	[TicketStatus.Submitted]: { label: 'Submitted', color: 'neutral', icon: 'mdi:inbox-arrow-down' },

@@ -11,11 +11,18 @@
 <script setup lang="ts">
 import { TicketPriority } from '~/shared/types/ticket';
 
-const props = withDefaults(defineProps<{ priority: TicketPriority; size?: string }>(), {
-	size: 'sm'
-});
+const props = withDefaults(
+	defineProps<{ priority: TicketPriority; size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' }>(),
+	{
+		size: 'sm'
+	}
+);
 
-type Meta = { label: string; color: string; icon: string };
+type Meta = {
+	label: string;
+	color: 'primary' | 'secondary' | 'success' | 'info' | 'warning' | 'error' | 'neutral';
+	icon: string;
+};
 
 const PRIORITY_META: Record<TicketPriority, Meta> = {
 	[TicketPriority.None]: { label: 'None', color: 'neutral', icon: 'mdi:minus' },

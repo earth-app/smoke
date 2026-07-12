@@ -1,61 +1,69 @@
 <template>
-	<NuxtLink
-		:to="`/dashboard/tickets/${ticket.id}`"
-		class="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
-	>
-		<div class="mt-0.5 shrink-0">
-			<UIcon
-				v-if="ticket.private"
-				name="mdi:lock-outline"
-				class="size-4 text-slate-400"
+	<UContextMenu :items="ticketMenu(ticket)">
+		<NuxtLink
+			:to="`/dashboard/tickets/${ticket.id}`"
+			class="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
+		>
+			<span
+				v-if="ticket.color"
+				class="mt-0.5 h-10 w-1 shrink-0 rounded-full"
+				:style="{ backgroundColor: ticket.color }"
 			/>
-			<UIcon
-				v-else
-				name="mdi:ticket-outline"
-				class="size-4 text-slate-400"
-			/>
-		</div>
-		<div class="min-w-0 flex-1">
-			<div class="flex items-center gap-2">
-				<span class="truncate font-medium">{{ ticket.title }}</span>
-				<span class="shrink-0 font-mono text-xs text-slate-400">#{{ ticket.id }}</span>
-			</div>
-			<p class="mt-0.5 line-clamp-1 text-sm text-slate-500 dark:text-slate-400">
-				{{ ticket.description || 'No description' }}
-			</p>
-			<div
-				v-if="labels.length"
-				class="mt-1.5 flex flex-wrap items-center gap-1"
-			>
-				<LabelBadge
-					v-for="label in labels"
-					:key="label.id"
-					:label="label"
+			<div class="mt-0.5 shrink-0">
+				<UIcon
+					v-if="ticket.private"
+					name="mdi:lock-outline"
+					class="size-4 text-slate-400"
+				/>
+				<UIcon
+					v-else
+					name="mdi:ticket-outline"
+					class="size-4 text-slate-400"
 				/>
 			</div>
-		</div>
-		<div class="flex shrink-0 flex-col items-end gap-1.5">
-			<div class="flex items-center gap-1.5">
-				<TicketPriorityBadge :priority="ticket.priority" />
-				<TicketStatusBadge :status="ticket.status" />
-			</div>
-			<div class="flex items-center gap-1">
-				<UAvatar
-					v-for="assignee in ticket.assignees.slice(0, 3)"
-					:key="assignee.id"
-					:src="assignee.avatar_url"
-					:alt="assignee.username"
-					size="2xs"
-				/>
-				<span
-					v-if="ticket.assignees.length > 3"
-					class="text-xs text-slate-400"
-					>+{{ ticket.assignees.length - 3 }}</span
+			<div class="min-w-0 flex-1">
+				<div class="flex items-center gap-2">
+					<span class="truncate font-medium">{{ ticket.title }}</span>
+					<span class="shrink-0 font-mono text-xs text-slate-400">#{{ ticket.id }}</span>
+				</div>
+				<p class="mt-0.5 line-clamp-1 text-sm text-slate-500 dark:text-slate-400">
+					{{ ticket.description || 'No description' }}
+				</p>
+				<div
+					v-if="labels.length"
+					class="mt-1.5 flex flex-wrap items-center gap-1"
 				>
+					<LabelBadge
+						v-for="label in labels"
+						:key="label.id"
+						:label="label"
+					/>
+				</div>
 			</div>
-			<span class="text-xs text-slate-400">{{ updatedLabel }}</span>
-		</div>
-	</NuxtLink>
+			<div class="flex shrink-0 flex-col items-end gap-1.5">
+				<div class="flex items-center gap-1.5">
+					<TicketPriorityBadge :priority="ticket.priority" />
+					<TicketStatusBadge :status="ticket.status" />
+				</div>
+				<div class="flex items-center gap-1">
+					<Avatar
+						v-for="assignee in ticket.assignees.slice(0, 3)"
+						:key="assignee.id"
+						:avatar="assignee.avatar_url"
+						:id="assignee.id"
+						:name="assignee.username"
+						size="2xs"
+					/>
+					<span
+						v-if="ticket.assignees.length > 3"
+						class="text-xs text-slate-400"
+						>+{{ ticket.assignees.length - 3 }}</span
+					>
+				</div>
+				<span class="text-xs text-slate-400">{{ updatedLabel }}</span>
+			</div>
+		</NuxtLink>
+	</UContextMenu>
 </template>
 
 <script setup lang="ts">
@@ -63,6 +71,8 @@ import type { Ticket } from '~/shared/types/ticket';
 import type { Label } from '~/shared/types/user';
 
 const props = defineProps<{ ticket: Ticket }>();
+
+const { ticketMenu } = useEntityMenus();
 
 const { labels: allLabels } = useLabels(() => ({}));
 
