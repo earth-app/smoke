@@ -32,7 +32,8 @@ export default defineEventHandler(async (event) => {
 			messageId,
 			body.message,
 			body.attachments,
-			event.context.cloudflare.env
+			event.context.cloudflare.env,
+			current.id
 		);
 	} catch (error) {
 		if (typeof error === 'object' && error !== null && 'statusCode' in error) {

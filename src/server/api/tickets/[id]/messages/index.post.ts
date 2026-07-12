@@ -24,6 +24,22 @@ export default defineEventHandler(async (event) => {
 		});
 	}
 
+	// archived is read-only for everyone until the ticket is unarchived (separate from the lock gate)
+	if (ticket.archived) {
+		throw createError({
+			statusCode: 423,
+			message: 'This request is archived'
+		});
+	}
+
+	// a locked thread rejects new messages unless the user may chat in locked threads
+	if (ticket.locked && !current.permissions.includes(Permission.ChatInLocked)) {
+		throw createError({
+			statusCode: 423,
+			message: 'This Thread is Locked'
+		});
+	}
+
 	try {
 		// 'team' anonymizes the reply (generic Team identity, no personal name/avatar)
 		const identity = body.identity ?? 'self';
@@ -36,7 +52,8 @@ export default defineEventHandler(async (event) => {
 						username: current.username,
 						email: current.email,
 						name: current.name,
-						avatar_url: current.avatar_url
+						avatar_url: current.avatar_url,
+						role: current.role
 					};
 
 		const created = await addTicketMessage(
@@ -49,6 +66,13 @@ export default defineEventHandler(async (event) => {
 			},
 			event.context.cloudflare.env
 		);
+
+		// composer cc: add each as a ticket participant BEFORE the mirror so they're auto-copied
+		for (const ccEmail of body.cc ?? []) {
+			await addTicketParticipant(id, ccEmail, event.context.cloudflare.env, {
+				actorId: current.id
+			}).catch(() => {});
+		}
 
 		// mirror the reply to the customer over email when the ticket is an email thread
 		await sendTicketEmailReply(id, body.message, event.context.cloudflare.env, body.attachments, {

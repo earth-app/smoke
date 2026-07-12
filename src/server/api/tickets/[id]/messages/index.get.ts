@@ -1,5 +1,5 @@
 import z from 'zod';
-import { TicketMessage } from '~/shared/types/ticket';
+import type { TicketMessage } from '~/shared/types/ticket';
 import * as schemas from '~/shared/utils/schemas';
 
 export default defineEventHandler(async (event) => {

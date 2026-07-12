@@ -22,7 +22,9 @@ export default defineEventHandler(async (event) => {
 			});
 		}
 
-		await deleteTicketMessage(id, messageId, event.context.cloudflare.env);
+		await deleteTicketMessage(id, messageId, event.context.cloudflare.env, {
+			actorId: current.id
+		});
 	} catch (error) {
 		if (typeof error === 'object' && error !== null && 'statusCode' in error) {
 			throw error;
