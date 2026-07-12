@@ -6,57 +6,90 @@
 			<span
 				:class="[
 					'flex size-9 shrink-0 items-center justify-center rounded-full',
-					configured
+					view.tone === 'success'
 						? 'bg-green-50 text-green-600 dark:bg-green-950'
-						: 'bg-slate-100 text-slate-400 dark:bg-slate-800'
+						: view.tone === 'warning'
+							? 'bg-amber-50 text-amber-600 dark:bg-amber-950'
+							: 'bg-slate-100 text-slate-400 dark:bg-slate-800'
 				]"
 			>
 				<UIcon
-					:name="configured ? 'mdi:email-check-outline' : 'mdi:email-off-outline'"
+					:name="view.icon"
 					class="size-5"
 				/>
 			</span>
 			<div class="min-w-0 flex-1">
 				<p class="text-sm font-medium">{{ transportLabel }}</p>
-				<p class="truncate text-xs text-slate-500">{{ detail }}</p>
+				<p class="truncate text-xs text-slate-500">{{ view.detail }}</p>
 			</div>
 			<UBadge
-				:color="configured ? 'success' : 'warning'"
+				:color="view.tone"
 				variant="subtle"
-				>{{ configured ? 'Active' : 'Not Configured' }}</UBadge
+				>{{ view.label }}</UBadge
 			>
 		</div>
 	</div>
 </template>
 
 <script setup lang="ts">
-type EmailSettings = {
-	transport?: 'cloudflare' | 'smtp';
-	support_email?: string;
-	smtp?: { host?: string; from?: string };
+type EmailConfigStatus = {
+	configured: boolean;
+	transport: 'cloudflare' | 'smtp' | null;
+	needsOnboarding: boolean;
+	reason?: string;
 };
 
 const { settings } = useSettings();
+const { sessionToken } = useAuth();
 
-const email = computed<EmailSettings>(() => (settings.value?.email as EmailSettings) || {});
-const transport = computed(() => email.value.transport || 'cloudflare');
+const status = ref<EmailConfigStatus | null>(null);
 
-const configured = computed(() => {
-	if (transport.value === 'smtp') return !!email.value.smtp?.host;
-	return !!(email.value.support_email || settings.value?.supportEmail);
-});
+async function refresh() {
+	try {
+		const headers: Record<string, string> = {};
+		if (sessionToken.value) headers.Authorization = `Bearer ${sessionToken.value}`;
+		status.value = await $fetch<EmailConfigStatus>('/api/cloudflare/email-status', {
+			cache: 'no-store',
+			credentials: 'include',
+			headers
+		});
+	} catch {
+		status.value = null;
+	}
+}
+
+onMounted(refresh);
+watch(settings, refresh);
 
 const transportLabel = computed(() =>
-	transport.value === 'smtp' ? 'Custom SMTP' : 'Cloudflare Email Service'
+	(status.value?.transport ?? 'cloudflare') === 'smtp' ? 'Custom SMTP' : 'Cloudflare Email Service'
 );
 
-const detail = computed(() => {
-	if (transport.value === 'smtp') {
-		return email.value.smtp?.host
-			? `Sending via ${email.value.smtp.host}`
-			: 'No SMTP host configured yet.';
+const view = computed(() => {
+	const s = status.value;
+	if (s?.configured) {
+		return {
+			tone: 'success' as const,
+			icon: 'mdi:email-check-outline',
+			label: 'Configured',
+			detail: s.reason || 'Ready to send outbound email.'
+		};
 	}
-	const support = email.value.support_email || (settings.value?.supportEmail as string);
-	return support ? `Sending as ${support}` : 'No support address configured yet.';
+	if (s?.needsOnboarding) {
+		return {
+			tone: 'warning' as const,
+			icon: 'mdi:email-alert-outline',
+			label: 'Needs Onboarding',
+			detail: s.reason || 'Verify your domain for Cloudflare Email Sending to finish setup.'
+		};
+	}
+	return {
+		tone: 'neutral' as const,
+		icon: 'mdi:email-off-outline',
+		label: 'Not Configured',
+		detail: s?.reason || 'Add an email transport to start sending.'
+	};
 });
+
+defineExpose({ refresh, status });
 </script>
