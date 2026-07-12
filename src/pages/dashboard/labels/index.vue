@@ -12,5 +12,6 @@
 </template>
 
 <script setup lang="ts">
+useSeoMeta({ title: 'Labels' });
 definePageMeta({ layout: 'dashboard', middleware: 'staff' });
 </script>
