@@ -21,7 +21,12 @@
 				<p class="text-muted">
 					Your ticket ID is
 					<span class="font-mono font-semibold text-highlighted">#{{ result.ticket_id }}</span
-					>. We've sent a confirmation to your email.
+					>.
+					{{
+						result.emailed
+							? "We've sent a confirmation to your email."
+							: 'Save the tracking link below to check back on this request.'
+					}}
 				</p>
 				<UButton
 					:to="statusLink"
@@ -51,7 +56,8 @@
 			<UFormField
 				label="Email"
 				name="email"
-				required
+				hint="Optional"
+				help="Add your email to also get updates by reply. Leave blank to track it here only."
 			>
 				<UInput
 					v-model="state.email"
@@ -100,11 +106,15 @@
 				/>
 			</UFormField>
 
-			<!-- TODO turnstile widget -->
+			<TurnstileWidget
+				v-if="turnstileActive"
+				@received-token="turnstileToken = $event"
+			/>
 
 			<UButton
 				type="submit"
 				:loading="submitting"
+				:disabled="turnstileActive && !turnstileToken"
 				color="primary"
 				icon="mdi:send"
 				size="lg"
@@ -113,6 +123,8 @@
 				Submit Request
 			</UButton>
 		</UForm>
+
+		<TicketMyRequests class="mt-8" />
 	</div>
 </template>
 
@@ -128,9 +140,14 @@ type SubmitState = {
 	description: string;
 };
 
-type SubmitResult = { ticket_id: number; status_token: string };
+type SubmitResult = { ticket_id: number; status_token: string; emailed: boolean };
 
 const toast = useToast();
+const { remember } = useMyRequests();
+
+const config = useRuntimeConfig();
+const turnstileActive = computed(() => !!config.public.turnstile?.siteKey);
+const turnstileToken = ref('');
 
 const state = ref<SubmitState>({ email: '', name: '', title: '', description: '' });
 const submitting = ref(false);
@@ -145,8 +162,8 @@ const statusLink = computed(() =>
 function validate(s: SubmitState): FormError[] {
 	const errors: FormError[] = [];
 	const email = s.email.trim();
-	if (!email) errors.push({ name: 'email', message: 'Email is required' });
-	else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+	// email is optional; only validate the format when one was entered
+	if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
 		errors.push({ name: 'email', message: 'Enter a valid email address' });
 	if (!s.title.trim()) errors.push({ name: 'title', message: 'A subject is required' });
 	if (!s.description.trim())
@@ -157,28 +174,37 @@ function validate(s: SubmitState): FormError[] {
 async function onSubmit(event: FormSubmitEvent<SubmitState>) {
 	submitting.value = true;
 	try {
-		const body: Record<string, string> = {
-			email: event.data.email.trim(),
-			title: event.data.title.trim(),
-			description: event.data.description.trim()
-		};
+		const email = event.data.email.trim();
+		const title = event.data.title.trim();
+		const body: Record<string, string> = { title, description: event.data.description.trim() };
+		if (email) body.email = email;
 		const name = event.data.name.trim();
 		if (name) body.name = name;
+		if (turnstileActive.value) body.turnstile = turnstileToken.value;
 
-		result.value = await $fetch<SubmitResult>('/api/public/tickets', {
-			method: 'POST',
-			body
+		const response = await $fetch<{ ticket_id: number; status_token: string }>(
+			'/api/public/tickets',
+			{ method: 'POST', body }
+		);
+		result.value = { ...response, emailed: !!email };
+		remember({
+			id: response.ticket_id,
+			token: response.status_token,
+			title,
+			created_at: Date.now()
 		});
 		toast.add({
 			title: 'Request Submitted',
-			description: 'Check your email for a confirmation.',
+			description: email
+				? 'Check your email for a confirmation.'
+				: 'Save your tracking link to check back on this request.',
 			icon: 'mdi:check-circle',
 			color: 'success'
 		});
 	} catch (e: any) {
 		toast.add({
 			title: 'Submission Failed',
-			description: e?.data?.message || e?.message || 'Please try again in a moment.',
+			description: extractServerMessage(e, 'Please try again in a moment.'),
 			icon: 'mdi:alert-circle',
 			color: 'error'
 		});
@@ -192,5 +218,20 @@ function reset() {
 	result.value = null;
 }
 
-useSeoMeta({ title: 'Submit a Request' });
+useSeoMeta({
+	title: 'Submit a Request',
+	description: 'Open a new support request and get help fast.',
+	ogTitle: 'Submit a Request',
+	ogDescription: 'Open a new support request and get help fast.',
+	twitterCard: 'summary'
+});
+useSchemaOrg([
+	defineWebPage({ '@type': ['WebPage', 'ContactPage'] }),
+	defineBreadcrumb({
+		itemListElement: [
+			{ name: 'Home', item: '/' },
+			{ name: 'Submit a Request', item: '/submit' }
+		]
+	})
+]);
 </script>
