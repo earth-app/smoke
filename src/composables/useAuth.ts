@@ -17,6 +17,8 @@ export function useAuth() {
 			user.value?.role === Role.Manager ||
 			user.value?.role === Role.Admin
 	);
+	// the founding owner is a locked admin; server-flagged on the current-user payload
+	const isOwner = computed(() => !!user.value?.is_owner);
 
 	const fetchUser = async (force: boolean = false) => {
 		try {
@@ -33,7 +35,7 @@ export function useAuth() {
 		} catch (error) {
 			return {
 				success: false,
-				message: error instanceof Error ? error.message : 'An unknown error occurred'
+				message: extractServerMessage(error, 'Could not update your account.')
 			};
 		}
 	};
@@ -45,7 +47,7 @@ export function useAuth() {
 		} catch (error) {
 			return {
 				success: false,
-				message: error instanceof Error ? error.message : 'An unknown error occurred'
+				message: extractServerMessage(error, 'Invalid username or password.')
 			};
 		}
 	};
@@ -55,10 +57,7 @@ export function useAuth() {
 			await authStore.logout();
 			return { success: true, message: 'Logout successful' };
 		} catch (error) {
-			return {
-				success: false,
-				message: error instanceof Error ? error.message : 'An unknown error occurred'
-			};
+			return { success: false, message: extractServerMessage(error, 'Could not sign you out.') };
 		}
 	};
 
@@ -78,6 +77,7 @@ export function useAuth() {
 		isAdmin,
 		isManager,
 		isAgent,
+		isOwner,
 		can,
 		fetchUser,
 		updateUser,
