@@ -45,6 +45,17 @@ export default defineEventHandler(async (event) => {
 			checklist.routing_enabled = false;
 			checklist.dkim_records = false;
 		}
+
+		// honest worker wiring: read the catch-all rule (a worker action = wired). no readable
+		// rule (or the offline mock) falls back to the persisted worker marker
+		try {
+			const rule = await getCatchAllRule(token, settings.zone_id);
+			checklist.worker_wired = rule
+				? rule.enabled && rule.actions.some((a) => a.type === 'worker')
+				: Boolean(settings.worker_name);
+		} catch {
+			checklist.worker_wired = Boolean(settings.worker_name);
+		}
 	}
 
 	try {
