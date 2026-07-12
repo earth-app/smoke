@@ -3,6 +3,9 @@ import type { H3Event } from 'h3';
 import type { DBUser } from 'hub:db:schema';
 import { ensureCollegeDB } from 'hub:db:schema';
 
+// audit attribution passed down from the route; env lets recordAudit init shards when needed
+type AuditOpts = { env?: any; actorId?: string | null; actorName?: string | null };
+
 // #region encryption
 
 export async function decryptUser(
@@ -32,9 +35,14 @@ export async function decryptUser(
 		last_name: typeof decrypted.last_name === 'string' ? decrypted.last_name : undefined,
 		avatar_url: typeof decrypted.avatar_url === 'string' ? decrypted.avatar_url : undefined,
 		role: decrypted.role as Role,
-		permissions: Array.isArray(decrypted.permissions)
-			? (decrypted.permissions as Permission[])
-			: [],
+		// admins always resolve to the full permission set so a newly-added permission reaches
+		// existing admins without a re-save; non-admins keep their explicit stored grants
+		permissions:
+			(decrypted.role as Role) === Role.Admin
+				? DEFAULT_PERMISSIONS[Role.Admin]
+				: Array.isArray(decrypted.permissions)
+					? (decrypted.permissions as Permission[])
+					: [],
 		labels: Array.isArray(decrypted.labels) ? (decrypted.labels as Label[]) : [],
 		created_at: new Date(Number(user.created_at) * 1000),
 		updated_at: new Date(Number(user.updated_at) * 1000)
@@ -93,7 +101,8 @@ export async function createUser(
 	username: string,
 	email: string,
 	role: Role = Role.Agent,
-	env: any
+	env: any,
+	opts?: AuditOpts
 ): Promise<{ id: string; sessionToken: string }> {
 	const id = generateUserId();
 	const nowSeconds = Math.floor(Date.now() / 1000);
@@ -130,6 +139,18 @@ export async function createUser(
 	);
 
 	const sessionToken = await createSessionToken(id);
+
+	await recordAudit(env, {
+		action: 'user.created',
+		actorId: opts?.actorId ?? null,
+		actorName: opts?.actorName ?? null,
+		targetType: 'user',
+		targetId: id,
+		priority: 'normal',
+		summary: `Created user @${username}`,
+		context: { username, role }
+	});
+
 	return { id, sessionToken };
 }
 
@@ -166,7 +187,11 @@ export async function setInitialPassword(userId: string, newPassword: string): P
 }
 
 // overwrite an existing password (reset flow); unlike setInitialPassword there's no already-set guard
-export async function setUserPassword(userId: string, newPassword: string): Promise<void> {
+export async function setUserPassword(
+	userId: string,
+	newPassword: string,
+	opts?: AuditOpts
+): Promise<void> {
 	const existing = await firstRow<{ id: string }>(userId, `SELECT id FROM users WHERE id = ?`, [
 		userId
 	]);
@@ -180,12 +205,23 @@ export async function setUserPassword(userId: string, newPassword: string): Prom
 		`UPDATE users SET password_hash = ?, password_salt = ?, password_algorithm = ? WHERE id = ?`,
 		[password_hash, password_salt, password_algorithm, userId]
 	);
+
+	await recordAudit(opts?.env, {
+		action: 'user.password_changed',
+		actorId: opts?.actorId ?? null,
+		actorName: opts?.actorName ?? null,
+		targetType: 'user',
+		targetId: userId,
+		priority: 'high',
+		summary: 'Changed an account password'
+	});
 }
 
 export async function patchUser(
 	user: User,
 	updates: Partial<Omit<User, 'id' | 'created_at' | 'updated_at'>>,
-	env: any
+	env: any,
+	opts?: AuditOpts
 ): Promise<User> {
 	const merged: User = { ...user, ...updates, updated_at: new Date() };
 
@@ -252,15 +288,36 @@ export async function patchUser(
 		await kv.del(`smoke:cache:user_username:${updates.username}`);
 	}
 
+	await recordAudit(env, {
+		action: 'user.updated',
+		actorId: opts?.actorId ?? null,
+		actorName: opts?.actorName ?? null,
+		targetType: 'user',
+		targetId: user.id,
+		priority: 'normal',
+		summary: `Updated user @${merged.username}`,
+		context: { fields: Object.keys(updates) }
+	});
+
 	return merged;
 }
 
-export async function deleteUser(userId: string): Promise<void> {
+export async function deleteUser(userId: string, opts?: AuditOpts): Promise<void> {
 	await Promise.allSettled([
 		run(userId, `DELETE FROM users WHERE id = ?`, [userId]),
 		deleteSessionTokens(userId),
 		kv.del(`smoke:cache:user_id:${userId}`)
 	]);
+
+	await recordAudit(opts?.env, {
+		action: 'user.deleted',
+		actorId: opts?.actorId ?? null,
+		actorName: opts?.actorName ?? null,
+		targetType: 'user',
+		targetId: userId,
+		priority: 'high',
+		summary: 'Deleted a user account'
+	});
 }
 
 export async function listUsers(
