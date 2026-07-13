@@ -29,6 +29,20 @@ describe('passwordStrength', () => {
 			const result = passwordStrength('aaaaaaaaaaaa');
 			expect(result.level).toBe('none');
 		});
+
+		it('coerces a nullish input to an empty password', () => {
+			const result = passwordStrength(undefined as unknown as string);
+			expect(result.level).toBe('none');
+			expect(result.categories).toEqual({ lowercase: 0, uppercase: 0, digit: 0, special: 0 });
+		});
+
+		it('does not count non-ascii letters toward any category', () => {
+			const pw = 'ü'.repeat(12);
+			expect(pw.length).toBe(12);
+			const result = passwordStrength(pw);
+			expect(result.categories).toEqual({ lowercase: 0, uppercase: 0, digit: 0, special: 0 });
+			expect(result.level).toBe('none');
+		});
 	});
 
 	describe('low', () => {
@@ -62,6 +76,15 @@ describe('passwordStrength', () => {
 			expect(result.level).toBe('medium');
 			expect(result.score).toBe(2);
 		});
+
+		it('is medium when three categories reach 2 but none reaches 3', () => {
+			// distinct counts [2,2,2,1]: categoriesWith(3) is 0, so strong is not met
+			const pw = 'abAB12!aaaaa';
+			expect(pw.length).toBe(12);
+			const result = passwordStrength(pw);
+			expect(result.categories).toEqual({ lowercase: 2, uppercase: 2, digit: 2, special: 1 });
+			expect(result.level).toBe('medium');
+		});
 	});
 
 	describe('strong', () => {
@@ -83,6 +106,15 @@ describe('passwordStrength', () => {
 			expect(result.categories).toEqual({ lowercase: 4, uppercase: 4, digit: 4, special: 1 });
 			expect(result.level).toBe('strong');
 		});
+
+		it('is strong (not best) when all four categories reach exactly 3 distinct', () => {
+			// distinct counts [3,3,3,3]: every(n>=4) is false, categoriesWith(3) is 4
+			const pw = 'abcABC123!@#';
+			expect(pw.length).toBe(12);
+			const result = passwordStrength(pw);
+			expect(result.categories).toEqual({ lowercase: 3, uppercase: 3, digit: 3, special: 3 });
+			expect(result.level).toBe('strong');
+		});
 	});
 
 	describe('best', () => {
@@ -92,6 +124,14 @@ describe('passwordStrength', () => {
 			expect(pw.length).toBe(16);
 			const result = passwordStrength(pw);
 			expect(result.categories).toEqual({ lowercase: 4, uppercase: 4, digit: 4, special: 4 });
+			expect(result.level).toBe('best');
+			expect(result.score).toBe(4);
+		});
+
+		it('is best for a long high-entropy password', () => {
+			const pw = 'abcdefghABCDEFGH12345678!@#$%^&*()';
+			expect(pw.length).toBeGreaterThan(20);
+			const result = passwordStrength(pw);
 			expect(result.level).toBe('best');
 			expect(result.score).toBe(4);
 		});

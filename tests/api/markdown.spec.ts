@@ -45,4 +45,49 @@ describe('renderMarkdown', () => {
 	it('returns an empty string for empty input', () => {
 		expect(renderMarkdown('')).toBe('');
 	});
+
+	it('renders the ++underline++ extension', () => {
+		expect(renderMarkdown('++underlined++')).toContain('<u>underlined</u>');
+	});
+
+	it('falls back to plaintext for an unknown fence language', () => {
+		const out = renderMarkdown('```notareallang\ncode here\n```');
+		expect(out).toContain('language-plaintext');
+	});
+
+	it('renders gfm tables', () => {
+		const out = renderMarkdown('| a | b |\n| - | - |\n| 1 | 2 |');
+		expect(out).toContain('<table');
+	});
+
+	it('turns single newlines into line breaks', () => {
+		expect(renderMarkdown('line one\nline two')).toContain('<br');
+	});
+
+	it('strips iframe blocks', () => {
+		const out = renderMarkdown('before\n\n<iframe src="https://evil.example"></iframe>\n\nafter');
+		expect(out.toLowerCase()).not.toContain('<iframe');
+	});
+
+	it('strips void form/meta elements', () => {
+		const out = renderMarkdown('text <input type="text"> more');
+		expect(out.toLowerCase()).not.toContain('<input');
+	});
+
+	it('strips inline style attributes', () => {
+		const out = renderMarkdown('text <span style="color:red">red</span>');
+		expect(out.toLowerCase()).not.toContain('style=');
+	});
+
+	it('strips data: urls from hrefs', () => {
+		const out = renderMarkdown('[x](data:text/html;base64,PHNjcmlwdD4=)');
+		expect(out.toLowerCase()).not.toContain('data:');
+	});
+
+	it('expands multiple known emoji shortcodes', () => {
+		const out = renderMarkdown(':fire: :rocket: :heart:');
+		expect(out).toContain('🔥');
+		expect(out).toContain('🚀');
+		expect(out).toContain('❤️');
+	});
 });

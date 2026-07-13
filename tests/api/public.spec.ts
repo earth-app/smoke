@@ -506,6 +506,68 @@ describe('GET /api/public/status', () => {
 		expect(result.id).toBe(created.ticket_id);
 		expect(result.title).toBe('Mine');
 	});
+
+	// regression: a guest ticket defaults to private, and a message used to inherit that private flag,
+	// so the customer's own reply was filtered out of their status page forever
+	it('shows the customer their own reply on an unlisted private ticket', async () => {
+		const runtime = getRuntime();
+		const create = await importRoute('~/server/api/public/tickets.post');
+		mockBody({ email: 'seesreply@example.com', title: 'Mine', description: 'the details' });
+		const created = (await create(eventFor(runtime.env))) as {
+			ticket_id: number;
+			status_token: string;
+		};
+
+		const reply = await importRoute('~/server/api/public/reply.post');
+		mockBody({ id: created.ticket_id, token: created.status_token, message: 'my follow-up' });
+		await reply(eventFor(runtime.env));
+
+		const handler = await importRoute('~/server/api/public/status.get');
+		mockQuery({ id: created.ticket_id, token: created.status_token });
+		const result = (await handler(eventFor(runtime.env))) as {
+			messages: { message: string; private: boolean }[];
+		};
+		expect(result.messages.some((m) => m.message === 'my follow-up')).toBe(true);
+		expect(result.messages.every((m) => m.private === false)).toBe(true);
+	});
+
+	it('shows a staff reply but still hides an explicit internal note on a private ticket', async () => {
+		const runtime = getRuntime();
+		const customer = await seedCustomer(runtime, { name: 'Cust', email: 'cust@example.com' });
+		const ticket = await seedTicket(runtime, {
+			title: 'Unlisted',
+			description: 'private conversation',
+			customer_id: customer.id,
+			visibility: TicketVisibility.Private
+		});
+
+		const utils = await import('#server-utils');
+		// an explicit staff internal note stays hidden from the customer
+		await utils.addTicketMessage(
+			ticket.id,
+			{
+				message: 'internal only',
+				sender: { kind: 'user', id: 'agent1', username: 'agent' },
+				private: true
+			},
+			runtime.env
+		);
+		// a normal staff reply on a private ticket must reach the customer
+		await utils.addTicketMessage(
+			ticket.id,
+			{ message: 'staff answer', sender: { kind: 'user', id: 'agent1', username: 'agent' } },
+			runtime.env
+		);
+
+		const token = await utils.hmacSha256(runtime.env.HMAC_SECRET, `status:${ticket.id}`);
+		const handler = await importRoute('~/server/api/public/status.get');
+		mockQuery({ id: ticket.id, token });
+		const result = (await handler(eventFor(runtime.env))) as {
+			messages: { message: string }[];
+		};
+		expect(result.messages.some((m) => m.message === 'staff answer')).toBe(true);
+		expect(result.messages.some((m) => m.message === 'internal only')).toBe(false);
+	});
 });
 
 describe('ticket participant portal + public access', () => {
@@ -829,12 +891,13 @@ describe('GET /api/public/status', () => {
 		expect(second.sender).toMatchObject({ kind: 'user', name: 'Casey Agent' });
 	});
 
-	it('filters private messages from an unlisted (private) ticket', async () => {
+	it('shows customer messages but hides explicit internal notes on an unlisted (private) ticket', async () => {
 		const runtime = getRuntime();
 		const utils = await import('#server-utils');
 		const customer = await seedCustomer(runtime, { name: 'Bea', email: 'bea@example.com' });
 
-		// a private-visibility ticket is token-viewable, but its messages are private and must be hidden
+		// a private-visibility ticket is a token-viewable customer conversation: the customer's own
+		// messages are shown; only messages an agent explicitly marks internal (private:true) are hidden
 		const ticket = await utils.createTicket(
 			{
 				title: 'Unlisted request',
@@ -847,8 +910,17 @@ describe('GET /api/public/status', () => {
 		await utils.addTicketMessage(
 			ticket.id,
 			{
-				message: 'private customer note',
+				message: 'customer follow-up',
 				sender: { kind: 'customer', id: customer.id, email: 'bea@example.com', name: 'Bea' }
+			},
+			runtime.env
+		);
+		await utils.addTicketMessage(
+			ticket.id,
+			{
+				message: 'agent internal note',
+				sender: { kind: 'user', id: 'agent1', username: 'agent' },
+				private: true
 			},
 			runtime.env
 		);
@@ -858,7 +930,8 @@ describe('GET /api/public/status', () => {
 		const result = (await handler(eventFor(runtime.env))) as any;
 
 		expect(result.visibility).toBe(TicketVisibility.Private);
-		expect(result.messages).toHaveLength(0);
+		expect(result.messages.some((m: any) => m.message === 'customer follow-up')).toBe(true);
+		expect(result.messages.some((m: any) => m.message === 'agent internal note')).toBe(false);
 	});
 
 	it('exposes a null creator and can_reply:false for a guest (customer-less) ticket', async () => {

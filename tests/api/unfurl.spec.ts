@@ -470,4 +470,144 @@ describe('normalizeClientUnfurl', () => {
 		expect(normalizeClientUnfurl(link, {})).toEqual({ url: link.url });
 		expect(normalizeClientUnfurl(link, null)).toEqual({ url: link.url });
 	});
+
+	it('returns just the url for a non-object raw', () => {
+		const link = classifyLink('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+		expect(normalizeClientUnfurl(link, 'not-json')).toEqual({ url: link.url });
+	});
+
+	it('returns just the url for a provider with no client-normalizer (generic)', () => {
+		const link = classifyLink('https://github.com/earth-app/smoke/issues/1');
+		expect(normalizeClientUnfurl(link, { anything: true })).toEqual({ url: link.url });
+	});
+
+	it('omits the image when a wikipedia summary has no thumbnail', () => {
+		const link = classifyLink('https://en.wikipedia.org/wiki/Cloudflare');
+		expect(normalizeClientUnfurl(link, { title: 'Cloudflare', extract: 'CDN co.' })).toEqual({
+			url: link.url,
+			title: 'Cloudflare',
+			description: 'CDN co.',
+			image: undefined
+		});
+	});
+
+	it('yields an undefined title when stackexchange returns no items', () => {
+		const link = classifyLink('https://stackoverflow.com/questions/11227809/why');
+		expect(normalizeClientUnfurl(link, { items: [] })).toEqual({
+			url: link.url,
+			title: undefined
+		});
+	});
+});
+
+// every provider branch that fails its structural guard must degrade to `generic`
+describe('classifyLink fall-through to generic', () => {
+	it('treats a non-document google docs url as generic', () => {
+		const r = classifyLink('https://docs.google.com/spreadsheets/d/abc/edit');
+		expect(r.kind).toBe('generic');
+		expect(r.host).toBe('docs.google.com');
+	});
+
+	it('classifies a single-segment gist as a gist keyed by its id', () => {
+		const r = classifyLink('https://gist.github.com/aa5a315d61ae9438b18d');
+		expect(r.kind).toBe('github-gist');
+		expect(r.owner).toBeUndefined();
+		expect(r.gistId).toBe('aa5a315d61ae9438b18d');
+		expect(r.label).toBe('aa5a315d61ae9438b18d');
+	});
+
+	it('treats a github owner-only path as generic', () => {
+		const r = classifyLink('https://github.com/earth-app');
+		expect(r.kind).toBe('generic');
+	});
+
+	it('treats a github issue number of 0 as a repo (not > 0)', () => {
+		const r = classifyLink('https://github.com/earth-app/smoke/issues/0');
+		expect(r.kind).toBe('github-repo');
+	});
+
+	it('treats a non-numeric stackoverflow id as generic', () => {
+		const r = classifyLink('https://stackoverflow.com/questions/abc/title');
+		expect(r.kind).toBe('generic');
+	});
+
+	it('treats an unknown stackoverflow section as generic', () => {
+		const r = classifyLink('https://stackoverflow.com/users/12345/jon');
+		expect(r.kind).toBe('generic');
+	});
+
+	it('treats a non-browse atlassian url as generic', () => {
+		const r = classifyLink('https://mycompany.atlassian.net/wiki/spaces/DEV');
+		expect(r.kind).toBe('generic');
+		expect(r.host).toBe('mycompany.atlassian.net');
+	});
+
+	it('treats a bare discord.gg url as generic', () => {
+		const r = classifyLink('https://discord.gg/');
+		expect(r.kind).toBe('generic');
+		expect(r.host).toBe('discord.gg');
+	});
+
+	it('classifies a discordapp.com invite', () => {
+		const r = classifyLink('https://discordapp.com/invite/abc');
+		expect(r.kind).toBe('discord');
+		expect(r.resource).toBe('invite');
+		expect(r.id).toBe('abc');
+	});
+
+	it('treats an unknown discord.com path as generic', () => {
+		const r = classifyLink('https://discord.com/login');
+		expect(r.kind).toBe('generic');
+	});
+
+	it('treats an instagram root url as generic', () => {
+		const r = classifyLink('https://instagram.com/');
+		expect(r.kind).toBe('generic');
+	});
+
+	it('treats a bare youtu.be url as generic', () => {
+		const r = classifyLink('https://youtu.be/');
+		expect(r.kind).toBe('generic');
+		expect(r.host).toBe('youtu.be');
+	});
+
+	it('treats a youtube watch url with no video id as generic', () => {
+		const r = classifyLink('https://www.youtube.com/watch');
+		expect(r.kind).toBe('generic');
+	});
+
+	it('treats an unknown youtube path as generic', () => {
+		const r = classifyLink('https://www.youtube.com/feed/subscriptions');
+		expect(r.kind).toBe('generic');
+	});
+
+	it('treats an unknown docker path as generic', () => {
+		const r = classifyLink('https://hub.docker.com/search?q=nginx');
+		expect(r.kind).toBe('generic');
+	});
+
+	it('classifies spotify show and episode resources', () => {
+		expect(classifyLink('https://open.spotify.com/show/abc123').label).toBe('Spotify Show');
+		expect(classifyLink('https://open.spotify.com/episode/def456').label).toBe('Spotify Episode');
+	});
+
+	it('treats an unknown spotify type as generic', () => {
+		const r = classifyLink('https://open.spotify.com/collection/tracks');
+		expect(r.kind).toBe('generic');
+	});
+
+	it('treats a non-/wiki/ wikipedia path as generic', () => {
+		const r = classifyLink('https://en.wikipedia.org/w/index.php?title=Foo');
+		expect(r.kind).toBe('generic');
+	});
+});
+
+describe('clientUnfurlEndpoint edge cases', () => {
+	it('defaults the language to en for a bare wikipedia.org host', () => {
+		const link = classifyLink('https://wikipedia.org/wiki/Foo');
+		expect(link.kind).toBe('wikipedia');
+		expect(clientUnfurlEndpoint(link)).toBe(
+			'https://en.wikipedia.org/api/rest_v1/page/summary/Foo'
+		);
+	});
 });

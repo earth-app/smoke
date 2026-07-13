@@ -70,4 +70,77 @@ describe('extractServerMessage', () => {
 			'Description: Too small: expected string to have >=1 characters'
 		);
 	});
+
+	it('reads the nested data.data.message candidate', () => {
+		expect(extractServerMessage({ data: { data: { message: 'Nested detail' } } })).toBe(
+			'Nested detail'
+		);
+	});
+
+	it('falls back to a non-generic data.statusMessage', () => {
+		expect(extractServerMessage({ data: { statusMessage: 'Rate limit exceeded' } })).toBe(
+			'Rate limit exceeded'
+		);
+	});
+
+	it('reads a non-generic top-level statusMessage', () => {
+		expect(extractServerMessage({ statusMessage: 'Gateway Timeout' })).toBe('Gateway Timeout');
+	});
+
+	it('prefers a zod issue over other candidates', () => {
+		const error = { data: { issues: [{ message: 'Zod says no' }], message: 'other' } };
+		expect(extractServerMessage(error)).toBe('Zod says no');
+	});
+
+	it('skips every generic reason phrase (case-insensitive) for the fallback', () => {
+		for (const phrase of ['error', 'Unknown Error', 'BAD REQUEST', 'Internal Server Error']) {
+			expect(extractServerMessage({ data: { message: phrase } }, 'fb')).toBe('fb');
+		}
+	});
+
+	it('skips a whitespace-only message', () => {
+		expect(extractServerMessage({ data: { message: '   ' } }, 'fb')).toBe('fb');
+	});
+
+	it('ignores a non-string candidate', () => {
+		expect(extractServerMessage({ data: { message: 123 } }, 'fb')).toBe('fb');
+	});
+
+	it('returns the fallback for a null error', () => {
+		expect(extractServerMessage(null, 'fb')).toBe('fb');
+	});
+
+	it('passes a plain object .message through the raw branch', () => {
+		expect(extractServerMessage({ message: 'Boom happened' })).toBe('Boom happened');
+	});
+
+	describe('zod unwrap edge cases', () => {
+		it('returns the raw text when the json blob is malformed', () => {
+			expect(extractServerMessage({ data: { message: '[not json' } })).toBe('[not json');
+		});
+
+		it('returns the raw text for an empty issue array', () => {
+			expect(extractServerMessage({ data: { message: '[]' } })).toBe('[]');
+		});
+
+		it('omits the label prefix when the path is empty', () => {
+			const blob = JSON.stringify([{ path: [], message: 'Required' }]);
+			expect(extractServerMessage({ data: { message: blob } })).toBe('Required');
+		});
+
+		it('omits the label prefix when the path is not an array', () => {
+			const blob = JSON.stringify([{ path: 'x', message: 'Bad' }]);
+			expect(extractServerMessage({ data: { message: blob } })).toBe('Bad');
+		});
+
+		it('joins a dotted path, filtering falsy segments, and capitalizes the label', () => {
+			const blob = JSON.stringify([{ path: ['user', '', null, 'name'], message: 'Invalid' }]);
+			expect(extractServerMessage({ data: { message: blob } })).toBe('User.name: Invalid');
+		});
+
+		it('falls back to the raw text when the first issue has no string message', () => {
+			const blob = JSON.stringify([{ path: ['x'] }]);
+			expect(extractServerMessage({ data: { message: blob } })).toBe(blob);
+		});
+	});
 });
