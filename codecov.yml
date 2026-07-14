@@ -17,8 +17,6 @@ flag_management:
   default_rules:
     carryforward: true
   individual_flags:
-    # names must match the flags the workflows upload under; a mismatch leaves the real
-    # flags on the default rules with no src/ scope (build.yml: unittests, e2e.yml: e2e + integration)
     - name: unittests
       paths:
         - src/

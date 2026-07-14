@@ -7,10 +7,8 @@ import { waitForHydration } from './utils/hydration';
 // grabs an api token for the customer/ticket setup. drives the ui for the rest.
 
 async function authenticate(page: import('@playwright/test').Page, _baseURL?: string) {
-	await page.goto('/login', { waitUntil: 'domcontentloaded' });
-	await waitForHydration(page);
 	await loginUi(page, TEST_ADMIN);
-	await expect(page).toHaveURL(/\/dashboard/, { timeout: 30_000 });
+	await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
 	return await loginViaApi(page.request, TEST_ADMIN);
 }
 
@@ -199,4 +197,58 @@ test('adds and removes a ticket participant in the sidebar panel', async ({
 	await expect(page.getByRole('button', { name: 'Remove Email' })).toHaveCount(0, {
 		timeout: 30_000
 	});
+});
+
+test('creating a label inline in the sidebar picker attaches it to the ticket', async ({
+	page,
+	baseURL,
+	isMobile
+}) => {
+	// the label picker is a reka USelectMenu; its option click is unreliable on mobile, and the
+	// staff detail sidebar is heavy there, so this is verified on desktop
+	test.skip(isMobile, 'reka select-menu option clicks are flaky on mobile; covered on desktop');
+	const token = await authenticate(page, baseURL);
+	const customer = await createCustomer(page, token);
+	const ticket = await createTicket(page, token, customer.id);
+
+	await page.goto(`/dashboard/tickets/${ticket.id}`, { waitUntil: 'domcontentloaded' });
+	await waitForHydration(page);
+	await expect(page.getByRole('heading', { name: new RegExp(ticket.title, 'i') })).toBeVisible();
+
+	// open the "Labels" TicketLabelPicker (a reka USelectMenu combobox) via its placeholder, type a
+	// fresh name, and pick the "Create label" option; the picker auto-creates + selects it
+	const labelName = `Picked ${Date.now()}`;
+	await page.getByText('Add labels').click();
+	await page.getByRole('combobox', { name: 'Search…' }).fill(labelName);
+	await page.getByRole('option', { name: /create label/i }).click();
+
+	// the picker creates the label (toast) and shows its badge in the sidebar
+	await expect(page.getByText('Label Created', { exact: true })).toBeVisible({ timeout: 30_000 });
+	await expect(page.getByText(labelName).first()).toBeVisible({ timeout: 30_000 });
+});
+
+test('the timeline renders the created and status-change events', async ({
+	page,
+	baseURL,
+	isMobile
+}) => {
+	// the staff detail conversation is heavy on mobile; timeline events are verified on desktop
+	test.skip(isMobile, 'staff detail view is heavy on mobile; timeline verified on desktop');
+	const token = await authenticate(page, baseURL);
+	const customer = await createCustomer(page, token);
+	const ticket = await createTicket(page, token, customer.id);
+	// a status patch emits a 'status' timeline event alongside the 'created' one
+	const patch = await page.request.patch(`/api/tickets/${ticket.id}`, {
+		headers: { Authorization: `Bearer ${token}` },
+		data: { status: 'work_in_progress' }
+	});
+	expect(patch.ok(), `status patch failed: ${patch.status()} ${await patch.text()}`).toBeTruthy();
+
+	await page.goto(`/dashboard/tickets/${ticket.id}`, { waitUntil: 'domcontentloaded' });
+	await waitForHydration(page);
+	await expect(page.getByRole('heading', { name: new RegExp(ticket.title, 'i') })).toBeVisible();
+
+	// TicketEvent rows interleave in the thread: the opened event + the status change
+	await expect(page.getByText(/opened this request/i)).toBeVisible({ timeout: 30_000 });
+	await expect(page.getByText(/changed status/i).first()).toBeVisible({ timeout: 30_000 });
 });

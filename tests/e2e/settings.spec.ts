@@ -6,10 +6,8 @@ import { waitForHydration } from './utils/hydration';
 // currentUser (the settings page is admin-gated), then drives the email + cloudflare tabs.
 
 async function authenticate(page: import('@playwright/test').Page): Promise<string> {
-	await page.goto('/login', { waitUntil: 'domcontentloaded' });
-	await waitForHydration(page);
 	await loginUi(page, TEST_ADMIN);
-	await expect(page).toHaveURL(/\/dashboard/, { timeout: 30_000 });
+	await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
 	return await loginViaApi(page.request, TEST_ADMIN);
 }
 
@@ -87,4 +85,95 @@ test('the cloudflare tab shows the zone and worker selectors on a linked account
 	await expect(page.getByText('Zone', { exact: true })).toBeVisible();
 	await expect(page.getByText('Worker', { exact: true })).toBeVisible();
 	await expect(page.getByRole('button', { name: /^provision$/i })).toBeVisible();
+
+	// the security card (turnstile bot protection) renders on the same tab
+	await expect(page.getByText('Bot Protection', { exact: true })).toBeVisible();
+});
+
+test('the branding tab saves the instance name', async ({ page }) => {
+	await authenticate(page);
+	await page.goto('/dashboard/settings', { waitUntil: 'domcontentloaded' });
+	await waitForHydration(page);
+
+	// branding is the default tab; the branding form + role icon/color cards render under it
+	await expect(page.getByRole('tab', { name: /branding/i })).toHaveAttribute(
+		'aria-selected',
+		'true'
+	);
+	await expect(page.getByRole('heading', { name: 'Branding', exact: true })).toBeVisible();
+
+	const name = `Smoke E2E ${Date.now()}`;
+	await page.getByLabel('Name', { exact: true }).fill(name);
+	await page.getByRole('button', { name: /save branding/i }).click();
+	await expect(page.getByText('Branding Saved', { exact: true })).toBeVisible({ timeout: 30_000 });
+});
+
+test('the branding tab saves role icons and role colors', async ({ page }) => {
+	await authenticate(page);
+	await page.goto('/dashboard/settings', { waitUntil: 'domcontentloaded' });
+	await waitForHydration(page);
+
+	// role icons: type an iconify name into the agent field (unique by its placeholder) and save
+	await expect(page.getByRole('heading', { name: 'Role Icons', exact: true })).toBeVisible();
+	await page.getByPlaceholder('mdi:account', { exact: true }).fill('mdi:face-agent');
+	await page.getByRole('button', { name: /save role icons/i }).click();
+	await expect(page.getByText('Role Icons Saved', { exact: true })).toBeVisible({
+		timeout: 30_000
+	});
+
+	// role colors: the card renders per-role avatar previews + color selects; persist the defaults
+	await expect(page.getByRole('heading', { name: 'Role Colors', exact: true })).toBeVisible();
+	await page.getByRole('button', { name: /save role colors/i }).click();
+	await expect(page.getByText('Role Colors Saved', { exact: true })).toBeVisible({
+		timeout: 30_000
+	});
+});
+
+test('the automation tab creates a flow with a nested condition group', async ({ page }) => {
+	await authenticate(page);
+	await page.goto('/dashboard/settings', { waitUntil: 'domcontentloaded' });
+	await waitForHydration(page);
+
+	await page.getByRole('tab', { name: /automation/i }).click();
+	await expect(page.getByRole('heading', { name: 'Automation Flows', exact: true })).toBeVisible();
+
+	// open the editor modal
+	await page.getByRole('button', { name: 'New Flow' }).click();
+	await expect(page.getByRole('heading', { name: 'New Flow', exact: true })).toBeVisible();
+
+	const flowName = `Escalate ${Date.now()}`;
+	await page.getByPlaceholder('Escalate Urgent Tickets').fill(flowName);
+
+	// drive the recursive FlowConditionGroup builder: add a leaf condition, then a nested group
+	await page.getByRole('button', { name: 'Add Condition' }).first().click();
+	await expect(page.getByRole('button', { name: 'Remove Condition' })).toBeVisible();
+	await page.getByPlaceholder('Value to compare against').fill('refund');
+
+	await page.getByRole('button', { name: 'Add Group' }).first().click();
+	// the nested group renders its own remove control + a second Add Condition button
+	await expect(page.getByRole('button', { name: 'Remove Group' })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Add Condition' })).toHaveCount(2);
+
+	// the default action (set priority) satisfies the min-one-action rule; save
+	await page.getByRole('button', { name: 'Create Flow' }).click();
+	await expect(page.getByText('Flow Created', { exact: true })).toBeVisible({ timeout: 30_000 });
+	// the new flow shows up in the list
+	await expect(page.getByText(flowName).first()).toBeVisible({ timeout: 30_000 });
+});
+
+test('the audit tab saves the retention window', async ({ page }) => {
+	await authenticate(page);
+	await page.goto('/dashboard/settings', { waitUntil: 'domcontentloaded' });
+	await waitForHydration(page);
+
+	await page.getByRole('tab', { name: /audit/i }).click();
+	await expect(
+		page.getByRole('heading', { name: 'Audit Log Retention', exact: true })
+	).toBeVisible();
+
+	await page.getByLabel('Keep Entries For (Days)', { exact: true }).fill('45');
+	await page.getByRole('button', { name: /save audit settings/i }).click();
+	await expect(page.getByText('Audit Settings Saved', { exact: true })).toBeVisible({
+		timeout: 30_000
+	});
 });

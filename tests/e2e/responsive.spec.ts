@@ -6,8 +6,6 @@ import { waitForHydration } from './utils/hydration';
 // checks layout holds up: no horizontal overflow, sidebar toggles, navbar usable.
 
 async function authenticate(page: import('@playwright/test').Page) {
-	await page.goto('/login', { waitUntil: 'domcontentloaded' });
-	await waitForHydration(page);
 	await loginUi(page, TEST_ADMIN);
 	await expect(page).toHaveURL(/\/dashboard/, { timeout: 30_000 });
 }

@@ -14,8 +14,6 @@ test.beforeEach(({ browserName }) => {
 });
 
 async function mintInvite(page: Page): Promise<string> {
-	await page.goto('/login', { waitUntil: 'domcontentloaded' });
-	await waitForHydration(page);
 	await loginUi(page, TEST_ADMIN);
 	await expect(page).toHaveURL(/\/dashboard/, { timeout: 30_000 });
 

@@ -47,3 +47,67 @@ test('an unknown status token shows the not-found card', async ({ page }) => {
 	await waitForHydration(page);
 	await expect(page.getByText(/request not found/i)).toBeVisible({ timeout: 30_000 });
 });
+
+test('the status viewer renders the conversation and accepts a reply', async ({ page }) => {
+	// open a public request via the unauthenticated api so it carries a status token + a real customer
+	const email = `status-${Date.now()}@smoke.test`;
+	const create = await page.request.post('/api/public/tickets', {
+		data: {
+			email,
+			title: `Status Viewer ${Date.now()}`,
+			description: 'seeded for the status-viewer e2e',
+			// the test env runs turnstile's always-pass key; any non-empty token clears the gate
+			turnstile: 'e2e-token'
+		}
+	});
+	expect(
+		create.ok(),
+		`ticket create failed: ${create.status()} ${await create.text()}`
+	).toBeTruthy();
+	const { ticket_id, status_token } = (await create.json()) as {
+		ticket_id: number;
+		status_token: string;
+	};
+
+	await page.goto(`/status/${encodeURIComponent(status_token)}?id=${ticket_id}`, {
+		waitUntil: 'domcontentloaded'
+	});
+	await waitForHydration(page);
+
+	// TicketConversation renders the header, description, and the conversation section
+	await expect(page.getByRole('heading', { name: /request status/i })).toBeVisible();
+	await expect(page.getByText(/seeded for the status-viewer e2e/i)).toBeVisible({
+		timeout: 30_000
+	});
+	await expect(page.getByRole('heading', { name: /^conversation$/i })).toBeVisible();
+
+	// the token holder can reply; the send is accepted (a guest ticket defaults to private
+	// visibility, so its messages are filtered from the public view - assert the accept toast)
+	const composer = page.getByPlaceholder(/add more detail or reply to our team/i);
+	await expect(composer).toBeVisible();
+	await composer.fill(`status reply ${Date.now()}`);
+	const sendBtn = page.getByRole('button', { name: /send reply/i });
+	await expect(sendBtn).toBeEnabled();
+	await sendBtn.click();
+	await expect(page.getByText('Reply Sent', { exact: true })).toBeVisible({ timeout: 30_000 });
+});
+
+test('the public search page browses and filters requests', async ({ page }) => {
+	await page.goto('/search', { waitUntil: 'domcontentloaded' });
+	await waitForHydration(page);
+
+	// the page chrome: heading, the open/archived tabs, and the search input
+	await expect(page.getByRole('heading', { name: /search requests/i })).toBeVisible();
+	await expect(page.getByRole('tab', { name: /open/i })).toBeVisible();
+	await expect(page.getByRole('tab', { name: /archived/i })).toBeVisible();
+	const input = page.getByPlaceholder(/search public requests/i);
+	await expect(input).toBeVisible();
+
+	// a query with no match drives the debounced search + the empty-result branch
+	await input.fill(`no-such-request-${Date.now()}`);
+	await expect(page.getByText(/no tickets found/i)).toBeVisible({ timeout: 30_000 });
+
+	// switching to the archived tab re-runs the search and swaps the placeholder (a distinct browse)
+	await page.getByRole('tab', { name: /archived/i }).click();
+	await expect(page.getByPlaceholder(/search archived requests/i)).toBeVisible({ timeout: 30_000 });
+});
