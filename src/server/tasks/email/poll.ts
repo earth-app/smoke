@@ -20,6 +20,12 @@ export default defineTask({
 			return { result: { processed: 0, skipped: 'not-configured' } };
 		}
 
+		// edgeport imap/pop3 needs cloudflare:sockets, which only exist on the workers runtime; the
+		// node dev server + e2e preview can't import it, so skip cleanly rather than warn every tick
+		if (import.meta.dev || process.env.NUXT_PUBLIC_E2E === '1') {
+			return { result: { processed: 0, skipped: 'unsupported-runtime' } };
+		}
+
 		try {
 			ensureCollegeDB(env);
 			const out = await pollInboundMailbox(env);
