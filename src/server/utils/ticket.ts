@@ -20,6 +20,9 @@ type StoredTicketMessage = Omit<
 	created_at: string;
 	edited_at?: string | null;
 	edited_by?: string | null;
+	// per-message internal-note flag; optional so legacy rows (written before it was persisted) read back
+	// via the sender-aware fallback in fromStoredTicketMessage
+	private?: boolean;
 };
 
 type StoredTicketAttachment = {
@@ -105,6 +108,7 @@ function toStoredTicketMessage(message: TicketMessage): StoredTicketMessage {
 		reply_to: message.reply_to,
 		sender: message.sender,
 		message: message.message,
+		private: message.private,
 		created_at: message.created_at.toISOString(),
 		edited_at: message.edited_at ? message.edited_at.toISOString() : undefined,
 		edited_by: message.edited_by ?? null
@@ -123,7 +127,7 @@ function fromStoredTicketMessage(
 		reply_to: message.reply_to,
 		sender: message.sender,
 		sender_id: message.sender.id.toString(),
-		private: ticket.private === 1,
+		private: message.private ?? (message.sender.kind === 'customer' ? false : ticket.private === 1),
 		message: message.message,
 		created_at: new Date(message.created_at),
 		edited_at: message.edited_at ? new Date(message.edited_at) : null,
@@ -1325,7 +1329,7 @@ export async function addTicketMessage(
 		reply_to: input.reply_to,
 		sender,
 		sender_id: sender.id.toString(),
-		private: input.private ?? ticket.private === 1,
+		private: sender.kind === 'customer' ? false : (input.private ?? false),
 		message: input.message,
 		created_at: new Date(),
 		attachments: attachmentEntries.length > 0 ? attachmentEntries : undefined
