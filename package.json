@@ -54,7 +54,7 @@
     "edgeport": "^1.0.3",
     "highlight.js": "^11.11.1",
     "luxon": "^3.7.2",
-    "marked": "^16.4.2",
+    "marked": "^18.0.0",
     "mimetext": "^3.0.28",
     "nuxt": "^4.4.8",
     "nuxt-api-shield": "^1.0.0",
