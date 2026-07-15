@@ -1,4 +1,4 @@
-import type { TicketEvent, TicketMessage } from '~/shared/types/ticket';
+import type { TicketActor, TicketEvent, TicketMessage } from '~/shared/types/ticket';
 
 export type TicketViewOrder = 'asc' | 'desc';
 export type TicketViewPrefs = { order: TicketViewOrder; compact: boolean };
@@ -38,4 +38,17 @@ export function mergeThreadEntries(
 	];
 	entries.sort((a, b) => a.at - b.at || a.seq - b.seq);
 	return order === 'desc' ? entries.reverse() : entries;
+}
+
+// distinct message senders, first-seen order, keyed by kind+id
+export function deriveThreadUsers(messages: TicketMessage[]): TicketActor[] {
+	const seen = new Set<string>();
+	const users: TicketActor[] = [];
+	for (const message of messages) {
+		const key = `${message.sender.kind}:${message.sender.id}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		users.push(message.sender);
+	}
+	return users;
 }
