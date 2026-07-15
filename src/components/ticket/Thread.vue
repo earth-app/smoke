@@ -52,7 +52,7 @@
 </template>
 
 <script setup lang="ts">
-import type { ThreadEntry } from '~/composables/useTicketView';
+import type { ThreadEntry } from '~/utils/ticket-thread';
 
 withDefaults(defineProps<{ entries: ThreadEntry[]; pending?: boolean; compact?: boolean }>(), {
 	pending: false,

@@ -1,5 +1,4 @@
 import type { TicketViewOrder, TicketViewPrefs } from '~/utils/ticket-thread';
-export type { ThreadEntry, TicketViewOrder, TicketViewPrefs } from '~/utils/ticket-thread';
 
 const STORAGE_KEY = 'smoke:ticket_view';
 const DEFAULTS: TicketViewPrefs = { order: 'asc', compact: false };
