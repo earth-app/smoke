@@ -1,9 +1,17 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { TEST_ADMIN } from './utils/auth';
 import { waitForHydration } from './utils/hydration';
 
-// setup lane only: fresh unseeded server on 4001, no admin exists yet.
-// walks the /setup wizard end to end and asserts the first-run redirect.
+async function pickFromSelect(page: Page, label: string, optionRe: RegExp) {
+	await expect(async () => {
+		const option = page.getByRole('option', { name: optionRe });
+		const open = await option.isVisible().catch(() => false);
+		if (!open) {
+			await page.getByLabel(label, { exact: true }).click();
+		}
+		await option.click({ timeout: 3000 });
+	}).toPass({ timeout: 20_000 });
+}
 
 test.describe.configure({ mode: 'serial' });
 
@@ -39,8 +47,7 @@ test('the email channel step exposes the inbound receiving options', async ({ pa
 	await expect(page.getByLabel('Host', { exact: true })).toHaveCount(0);
 
 	// choosing a custom mailbox reveals the poll host/port inputs and they accept input
-	await page.getByLabel('Inbound Method', { exact: true }).click();
-	await page.getByRole('option', { name: /custom imap\/pop3 mailbox/i }).click();
+	await pickFromSelect(page, 'Inbound Method', /custom imap\/pop3 mailbox/i);
 	const host = page.getByLabel('Host', { exact: true });
 	await expect(host).toBeVisible();
 	await host.fill('imap.smoke.test');
@@ -50,8 +57,7 @@ test('the email channel step exposes the inbound receiving options', async ({ pa
 	await expect(port).toHaveValue('993');
 
 	// configure later hides the mailbox fields again
-	await page.getByLabel('Inbound Method', { exact: true }).click();
-	await page.getByRole('option', { name: /configure later/i }).click();
+	await pickFromSelect(page, 'Inbound Method', /configure later/i);
 	await expect(page.getByLabel('Host', { exact: true })).toHaveCount(0);
 });
 
