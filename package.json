@@ -51,7 +51,7 @@
     "bcryptjs": "^3.0.3",
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
-    "edgeport": "^1.0.2",
+    "edgeport": "^1.0.3",
     "highlight.js": "^11.11.1",
     "luxon": "^3.7.2",
     "marked": "^16.4.2",
