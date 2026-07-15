@@ -10,13 +10,13 @@
 		</div>
 
 		<form
-			class="flex flex-wrap items-end gap-2"
+			class="flex flex-col gap-2 sm:flex-row sm:items-end"
 			@submit.prevent="add"
 		>
 			<UFormField
 				label="Email"
 				size="sm"
-				class="min-w-48 flex-1"
+				class="min-w-0 flex-1"
 			>
 				<UInput
 					v-model="draft"
@@ -31,6 +31,7 @@
 				icon="mdi:plus"
 				:loading="adding"
 				:disabled="!draft.trim()"
+				class="w-full justify-center sm:w-auto"
 				>Link Mailbox</UButton
 			>
 		</form>
