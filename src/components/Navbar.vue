@@ -4,16 +4,16 @@
 	>
 		<NuxtLink
 			to="/"
-			class="flex items-center gap-2"
+			class="flex min-w-0 items-center gap-2"
 		>
 			<UIcon
 				name="mdi:lifebuoy"
-				class="size-7 text-primary-500"
+				class="size-7 shrink-0 text-primary-500"
 			/>
-			<span class="text-lg font-semibold">{{ brandName }}</span>
+			<span class="truncate text-lg font-semibold">{{ brandName }}</span>
 		</NuxtLink>
 
-		<div class="ml-auto flex items-center gap-2">
+		<div class="ml-auto flex shrink-0 items-center gap-2">
 			<CommandButton />
 			<template v-if="authResolving">
 				<Skeleton

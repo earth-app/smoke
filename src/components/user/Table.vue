@@ -38,27 +38,31 @@
 			>
 				<NuxtLink
 					:to="`/dashboard/users/${user.id}`"
-					class="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
+					class="flex flex-col gap-2 px-4 py-3 transition-colors hover:bg-slate-50 sm:flex-row sm:items-center sm:gap-3 dark:hover:bg-slate-800/50"
 				>
-					<Avatar
-						:avatar="user.avatar_url"
-						:id="user.id"
-						:name="user.username"
-						size="sm"
-					/>
-					<div class="min-w-0 flex-1">
-						<p class="truncate text-sm font-medium">{{ user.name || user.username }}</p>
-						<p class="truncate text-xs text-slate-500">@{{ user.username }} · {{ user.email }}</p>
+					<div class="flex min-w-0 flex-1 items-center gap-3">
+						<Avatar
+							:avatar="user.avatar_url"
+							:id="user.id"
+							:name="user.username"
+							size="sm"
+						/>
+						<div class="min-w-0 flex-1">
+							<p class="truncate text-sm font-medium">{{ user.name || user.username }}</p>
+							<p class="truncate text-xs text-slate-500">@{{ user.username }} · {{ user.email }}</p>
+						</div>
 					</div>
-					<UBadge
-						:color="roleColor(user.role) as any"
-						variant="subtle"
-						>{{ roleLabel(user.role) }}</UBadge
-					>
-					<UIcon
-						name="mdi:chevron-right"
-						class="size-5 text-slate-300"
-					/>
+					<div class="flex shrink-0 items-center gap-2 pl-11 sm:pl-0">
+						<UBadge
+							:color="roleColor(user.role) as any"
+							variant="subtle"
+							>{{ roleLabel(user.role) }}</UBadge
+						>
+						<UIcon
+							name="mdi:chevron-right"
+							class="size-5 text-slate-300"
+						/>
+					</div>
 				</NuxtLink>
 			</UContextMenu>
 		</div>
