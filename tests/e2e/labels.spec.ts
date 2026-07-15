@@ -12,18 +12,32 @@ async function authenticate(page: import('@playwright/test').Page): Promise<stri
 	return await loginViaApi(page.request, TEST_ADMIN);
 }
 
-// wipe every label so the created row's Edit/Delete controls are unambiguous
+// wipe every label so the created row's Edit/Delete controls are unambiguous. loops until the
+// list is empty so leftovers from prior specs/runs can't leave a stray row (or a strict-mode match)
 async function clearLabels(page: import('@playwright/test').Page, token: string) {
-	const res = await page.request.get('/api/labels', {
-		headers: { Authorization: `Bearer ${token}` }
-	});
-	expect(res.ok(), `label list failed: ${res.status()}`).toBeTruthy();
-	const labels = (await res.json()) as { id: number }[];
-	for (const label of labels) {
-		await page.request.delete(`/api/labels/${label.id}`, {
+	for (let pass = 0; pass < 10; pass++) {
+		const res = await page.request.get('/api/labels', {
 			headers: { Authorization: `Bearer ${token}` }
 		});
+		expect(res.ok(), `label list failed: ${res.status()}`).toBeTruthy();
+		const labels = (await res.json()) as { id: number }[];
+		if (!labels.length) return;
+		for (const label of labels) {
+			await page.request.delete(`/api/labels/${label.id}`, {
+				headers: { Authorization: `Bearer ${token}` }
+			});
+		}
 	}
+}
+
+// seed exactly one label over the api so the single row's Edit/Delete controls are unambiguous
+async function seedLabel(page: import('@playwright/test').Page, token: string, name: string) {
+	const res = await page.request.post('/api/labels', {
+		headers: { Authorization: `Bearer ${token}` },
+		data: { name, color: '#3b82f6' }
+	});
+	expect(res.ok(), `label seed failed: ${res.status()} ${await res.text()}`).toBeTruthy();
+	return (await res.json()) as { id: number; name: string };
 }
 
 test.beforeEach(({ browserName }) => {
@@ -83,4 +97,52 @@ test('create with the color picker, edit the color inline, then delete', async (
 	await page.getByRole('button', { name: 'Delete Label' }).click();
 	await expect(page.getByText('Label Deleted', { exact: true })).toBeVisible({ timeout: 30_000 });
 	await expect(page.getByText('No labels yet.')).toBeVisible({ timeout: 30_000 });
+});
+
+test('the add-label button is disabled until a name is entered', async ({ page }) => {
+	await authenticate(page);
+	await page.goto('/dashboard/labels', { waitUntil: 'domcontentloaded' });
+	await waitForHydration(page);
+
+	const createForm = page
+		.locator('form')
+		.filter({ has: page.getByRole('button', { name: 'Add Label' }) });
+	const add = createForm.getByRole('button', { name: 'Add Label' });
+	// draftName starts empty, so the :disabled bind holds; typing a name enables it
+	await expect(add).toBeDisabled();
+	await createForm.getByPlaceholder('Bug, Billing, Urgent...').fill(`Label ${Date.now()}`);
+	await expect(add).toBeEnabled();
+});
+
+test('cancelling an inline edit restores the read-only row', async ({ page }) => {
+	const token = await authenticate(page);
+	await clearLabels(page, token);
+	const label = await seedLabel(page, token, `Cancel ${Date.now()}`);
+
+	await page.goto('/dashboard/labels', { waitUntil: 'domcontentloaded' });
+	await waitForHydration(page);
+	await expect(page.getByText(label.name).first()).toBeVisible({ timeout: 30_000 });
+
+	// the editor swaps in a Save/Cancel pair; Cancel resets editingId and restores the badge row
+	await page.getByRole('button', { name: 'Edit Label' }).click();
+	await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'Edit Label' })).toBeVisible({ timeout: 30_000 });
+	await expect(page.getByText(label.name).first()).toBeVisible();
+});
+
+test('dismissing the delete confirmation keeps the label', async ({ page }) => {
+	const token = await authenticate(page);
+	await clearLabels(page, token);
+	const label = await seedLabel(page, token, `Keep ${Date.now()}`);
+
+	await page.goto('/dashboard/labels', { waitUntil: 'domcontentloaded' });
+	await waitForHydration(page);
+	await expect(page.getByText(label.name).first()).toBeVisible({ timeout: 30_000 });
+
+	// decline the native confirm; remove() short-circuits before the delete request
+	page.on('dialog', (dialog) => dialog.dismiss());
+	await page.getByRole('button', { name: 'Delete Label' }).click();
+
+	await expect(page.getByText(label.name).first()).toBeVisible();
+	await expect(page.getByText('No labels yet.')).toHaveCount(0);
 });

@@ -90,3 +90,28 @@ test('generate access link mints a portal magic link', async ({ page }) => {
 		timeout: 30_000
 	});
 });
+
+test('the customers list shows the empty state for a no-match search', async ({ page }) => {
+	await authenticate(page);
+	await page.goto('/dashboard/customers', { waitUntil: 'domcontentloaded' });
+	await waitForHydration(page);
+
+	// a query with no match drives the debounced search + the empty-result branch
+	await page.getByPlaceholder(/search customers/i).fill(`no-such-customer-${Date.now()}`);
+	await expect(page.getByText(/no customers found/i)).toBeVisible({ timeout: 30_000 });
+});
+
+test('the edit-tags modal saves customer tags', async ({ page }) => {
+	const token = await authenticate(page);
+	const customer = await createCustomer(page, token);
+
+	await page.goto(`/dashboard/customers/${customer.id}`, { waitUntil: 'domcontentloaded' });
+	await waitForHydration(page);
+	await expect(page.getByText(customer.email).first()).toBeVisible({ timeout: 30_000 });
+
+	// open the edit-tags modal from the customer card and save (no tags selected still persists)
+	await page.getByRole('button', { name: 'Edit Tags' }).click();
+	await expect(page.getByRole('heading', { name: 'Edit Tags', exact: true })).toBeVisible();
+	await page.getByRole('button', { name: /save tags/i }).click();
+	await expect(page.getByText('Tags Updated', { exact: true })).toBeVisible({ timeout: 30_000 });
+});

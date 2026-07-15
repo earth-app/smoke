@@ -98,3 +98,13 @@ test('toggling a permission on the matrix persists', async ({ page }) => {
 	await save.click();
 	await expect(page.getByText('User Updated', { exact: true })).toBeVisible({ timeout: 30_000 });
 });
+
+test('the users list shows the empty state for a no-match search', async ({ page }) => {
+	await authenticate(page);
+	await page.goto('/dashboard/users', { waitUntil: 'domcontentloaded' });
+	await waitForHydration(page);
+
+	// the search is debounced then reloads; a no-match query drives the UserTable empty state
+	await page.getByPlaceholder(/search users/i).fill(`no-such-user-${Date.now()}`);
+	await expect(page.getByText(/no users found/i)).toBeVisible({ timeout: 30_000 });
+});

@@ -73,6 +73,58 @@ test('requesting a code on the portal login advances to the code-entry step', as
 	await expect(page.getByRole('button', { name: /resend code/i })).toBeVisible();
 });
 
+test('an invalid verification code shows the failure toast', async ({ page }) => {
+	await page.context().clearCookies();
+	await page.goto('/portal/login', { waitUntil: 'domcontentloaded' });
+	await waitForHydration(page);
+
+	await page.getByRole('textbox', { name: /email/i }).first().fill('portal-badotp@smoke.test');
+	await page.getByRole('button', { name: /send verification code/i }).click();
+	await expect(page.getByText(/we sent a 6-digit code/i)).toBeVisible({ timeout: 30_000 });
+
+	// no code was minted offline, so any well-formed 6-digit code is rejected server-side
+	await page.getByRole('textbox', { name: /verification code/i }).fill('000000');
+	await page.getByRole('button', { name: /verify and continue/i }).click();
+	await expect(page.getByText('Verification Failed', { exact: true })).toBeVisible({
+		timeout: 30_000
+	});
+});
+
+test('the portal log-out returns a signed-in customer to the login', async ({
+	page,
+	browserName
+}) => {
+	test.skip(browserName === 'webkit', 'authenticated flows are flaky on local webkit');
+	const token = await authenticate(page);
+
+	// seed a customer + a magic link, then sign in through it
+	const email = `portal-logout-${Date.now()}@smoke.test`;
+	const customer = (await apiPost(page, token, '/api/customers', {
+		email,
+		name: 'Portal Logout Customer'
+	})) as { id: number };
+	const magic = (await apiPost(page, token, `/api/customers/${customer.id}/magic-link`, {})) as {
+		token: string;
+	};
+
+	// drop the staff session so the portal resolves the customer, not the staffer
+	await page.context().clearCookies();
+	await page.goto(`/portal/magic/${encodeURIComponent(magic.token)}`, {
+		waitUntil: 'domcontentloaded'
+	});
+	await expect(page).toHaveURL(/\/portal(\?|$)/, { timeout: 30_000 });
+	await waitForHydration(page);
+	await expect(page.getByRole('heading', { name: /^my requests$/i })).toBeVisible({
+		timeout: 30_000
+	});
+
+	// logging out clears the customer session and lands back on the portal login
+	await page.getByRole('button', { name: /log out/i }).click();
+	await expect(page).toHaveURL(/\/portal\/login/, { timeout: 30_000 });
+	await waitForHydration(page);
+	await expect(page.getByRole('heading', { name: /customer portal/i })).toBeVisible();
+});
+
 test('a magic link signs a customer into the portal and lists their requests', async ({
 	page,
 	browserName

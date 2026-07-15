@@ -1,4 +1,5 @@
 import { expect, test } from './fixtures';
+import { loginViaApi, TEST_ADMIN } from './utils/auth';
 import { waitForHydration } from './utils/hydration';
 
 // main lane, no auth: the public request funnel (landing -> submit -> status).
@@ -110,4 +111,43 @@ test('the public search page browses and filters requests', async ({ page }) => 
 	// switching to the archived tab re-runs the search and swaps the placeholder (a distinct browse)
 	await page.getByRole('tab', { name: /archived/i }).click();
 	await expect(page.getByPlaceholder(/search archived requests/i)).toBeVisible({ timeout: 30_000 });
+});
+
+test('a locked request hides the reply composer on the status page', async ({ page }) => {
+	// locking needs a staff token; drive it over the api, then view the public page as the customer
+	const token = await loginViaApi(page.request, TEST_ADMIN);
+	const email = `locked-${Date.now()}@smoke.test`;
+	const create = await page.request.post('/api/public/tickets', {
+		data: {
+			email,
+			title: `Locked Request ${Date.now()}`,
+			description: 'seeded for the locked-reply e2e',
+			turnstile: 'e2e-token'
+		}
+	});
+	expect(
+		create.ok(),
+		`ticket create failed: ${create.status()} ${await create.text()}`
+	).toBeTruthy();
+	const { ticket_id, status_token } = (await create.json()) as {
+		ticket_id: number;
+		status_token: string;
+	};
+
+	const lock = await page.request.post(`/api/tickets/${ticket_id}/lock`, {
+		headers: { Authorization: `Bearer ${token}` },
+		data: { locked: true }
+	});
+	expect(lock.ok(), `lock failed: ${lock.status()} ${await lock.text()}`).toBeTruthy();
+
+	// drop the staff session so the page renders the customer view
+	await page.context().clearCookies();
+	await page.goto(`/status/${encodeURIComponent(status_token)}?id=${ticket_id}`, {
+		waitUntil: 'domcontentloaded'
+	});
+	await waitForHydration(page);
+
+	// the conversation shows the locked alert and the reply composer is gone (canReply is false)
+	await expect(page.getByText(/this request is locked/i)).toBeVisible({ timeout: 30_000 });
+	await expect(page.getByPlaceholder(/add more detail or reply to our team/i)).toHaveCount(0);
 });

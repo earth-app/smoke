@@ -177,3 +177,38 @@ test('the audit tab saves the retention window', async ({ page }) => {
 		timeout: 30_000
 	});
 });
+
+test('the visibility, projects, custom fields, ai, and retention tabs render their content', async ({
+	page,
+	browserName
+}) => {
+	test.skip(browserName === 'webkit', 'authenticated dashboard rendering is flaky on local webkit');
+	await authenticate(page);
+	await page.goto('/dashboard/settings', { waitUntil: 'domcontentloaded' });
+	await waitForHydration(page);
+
+	// each tab click mounts a settings sub-component; assert a distinctive control from each. only the
+	// active panel is shown, so a per-tab unique button is a stable, strict-mode-safe target
+	await page.getByRole('tab', { name: /visibility/i }).click();
+	await expect(page.getByText('Default Ticket Visibility', { exact: true })).toBeVisible({
+		timeout: 30_000
+	});
+	await expect(page.getByRole('button', { name: /save visibility/i })).toBeVisible();
+
+	await page.getByRole('tab', { name: /projects/i }).click();
+	await expect(page.getByRole('button', { name: /add project/i })).toBeVisible({ timeout: 30_000 });
+
+	await page.getByRole('tab', { name: /custom fields/i }).click();
+	await expect(page.getByRole('button', { name: /save fields/i })).toBeVisible({ timeout: 30_000 });
+
+	await page.getByRole('tab', { name: /ai replies/i }).click();
+	await expect(page.getByRole('button', { name: /save ai settings/i })).toBeVisible({
+		timeout: 30_000
+	});
+
+	await page.getByRole('tab', { name: /retention/i }).click();
+	await expect(page.getByRole('button', { name: /save retention/i })).toBeVisible({
+		timeout: 30_000
+	});
+	await expect(page.getByText('Thread Locking', { exact: true })).toBeVisible();
+});

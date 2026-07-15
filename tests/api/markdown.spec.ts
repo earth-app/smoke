@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderMarkdown } from '~/composables/useMarkdown';
+import { _internal, renderMarkdown } from '~/utils/markdown';
 
 describe('renderMarkdown', () => {
 	it('renders bold and headings', () => {
@@ -89,5 +89,110 @@ describe('renderMarkdown', () => {
 		expect(out).toContain('🔥');
 		expect(out).toContain('🚀');
 		expect(out).toContain('❤️');
+	});
+});
+
+// direct coverage of the branch-heavy pure helpers (the unit lane runs with
+// import.meta.client === false, so renderMarkdown takes the regex server fallback)
+describe('markdown sanitizer internals', () => {
+	const { isRelativeUrl, isSafeUrl, expandEmojis, escapeHtml, sanitizeServerFallback } = _internal;
+
+	describe('isRelativeUrl', () => {
+		it('treats path/hash prefixes as relative', () => {
+			expect(isRelativeUrl('/abs')).toBe(true);
+			expect(isRelativeUrl('./rel')).toBe(true);
+			expect(isRelativeUrl('../up')).toBe(true);
+			expect(isRelativeUrl('#anchor')).toBe(true);
+		});
+		it('treats an absolute url as non-relative', () => {
+			expect(isRelativeUrl('https://example.com')).toBe(false);
+			expect(isRelativeUrl('mailto:a@b.com')).toBe(false);
+		});
+	});
+
+	describe('isSafeUrl', () => {
+		it('rejects empty values', () => {
+			expect(isSafeUrl('', 'link')).toBe(false);
+			expect(isSafeUrl('', 'media')).toBe(false);
+		});
+		it('allows any relative url', () => {
+			expect(isSafeUrl('/foo', 'link')).toBe(true);
+			expect(isSafeUrl('#top', 'media')).toBe(true);
+		});
+		it('allows http/https/mailto/tel for links', () => {
+			expect(isSafeUrl('http://x.com', 'link')).toBe(true);
+			expect(isSafeUrl('https://x.com', 'link')).toBe(true);
+			expect(isSafeUrl('mailto:a@b.com', 'link')).toBe(true);
+			expect(isSafeUrl('tel:+15551234567', 'link')).toBe(true);
+		});
+		it('rejects mailto/tel/javascript for media (only http/https)', () => {
+			expect(isSafeUrl('http://x.com/a.png', 'media')).toBe(true);
+			expect(isSafeUrl('https://x.com/a.png', 'media')).toBe(true);
+			expect(isSafeUrl('mailto:a@b.com', 'media')).toBe(false);
+			expect(isSafeUrl('tel:+1', 'media')).toBe(false);
+		});
+		it('rejects javascript: and data: schemes for links', () => {
+			expect(isSafeUrl('javascript:alert(1)', 'link')).toBe(false);
+			expect(isSafeUrl('data:text/html,x', 'link')).toBe(false);
+		});
+		it('returns false for an unparseable url', () => {
+			expect(isSafeUrl('http://[bad', 'link')).toBe(false);
+		});
+	});
+
+	describe('expandEmojis', () => {
+		it('replaces known and leaves unknown', () => {
+			expect(expandEmojis(':tada: :nope:')).toBe('🎉 :nope:');
+		});
+	});
+
+	describe('escapeHtml', () => {
+		it('escapes the html-significant characters', () => {
+			expect(escapeHtml('<a href="x" & y>')).toBe('&lt;a href=&quot;x&quot; &amp; y&gt;');
+		});
+	});
+
+	describe('sanitizeServerFallback', () => {
+		it('removes paired dangerous blocks', () => {
+			expect(sanitizeServerFallback('a<script>x</script>b')).toBe('ab');
+			expect(sanitizeServerFallback('a<style>x</style>b')).toBe('ab');
+			expect(sanitizeServerFallback('a<iframe>x</iframe>b')).toBe('ab');
+			expect(sanitizeServerFallback('a<textarea>x</textarea>b')).toBe('ab');
+		});
+		it('removes void elements', () => {
+			expect(sanitizeServerFallback('a<input type="x">b')).toBe('ab');
+			expect(sanitizeServerFallback('a<meta charset="utf-8">b')).toBe('ab');
+			expect(sanitizeServerFallback('a<link rel="x"/>b')).toBe('ab');
+			expect(sanitizeServerFallback('a<base href="x">b')).toBe('ab');
+		});
+		it('strips on* handlers and style attributes', () => {
+			expect(sanitizeServerFallback('<p onclick="x()">hi</p>').toLowerCase()).not.toContain(
+				'onclick'
+			);
+			expect(sanitizeServerFallback('<p style="color:red">hi</p>').toLowerCase()).not.toContain(
+				'style='
+			);
+		});
+		it('strips javascript: and data: from quoted href/src', () => {
+			expect(
+				sanitizeServerFallback('<a href="javascript:alert(1)">x</a>').toLowerCase()
+			).not.toContain('javascript:');
+			expect(
+				sanitizeServerFallback('<img src="data:image/png;base64,AA">').toLowerCase()
+			).not.toContain('data:');
+		});
+		it('strips javascript: and data: from unquoted href/src', () => {
+			expect(
+				sanitizeServerFallback('<a href=javascript:alert(1)>x</a>').toLowerCase()
+			).not.toContain('javascript:');
+			expect(
+				sanitizeServerFallback('<img src=data:image/png;base64,AA>').toLowerCase()
+			).not.toContain('data:');
+		});
+		it('leaves benign markup intact', () => {
+			const out = sanitizeServerFallback('<p class="x">hello <strong>world</strong></p>');
+			expect(out).toContain('<strong>world</strong>');
+			expect(out).toContain('class="x"');
+		});
 	});
 });

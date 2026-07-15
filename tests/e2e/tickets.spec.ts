@@ -39,6 +39,23 @@ async function createTicket(
 	return (await res.json()) as { id: number; title: string };
 }
 
+// create a public (guest) ticket via the unauthenticated api; returns the hmac status token so the
+// public status page can be driven the way a customer reaches it
+async function createPublicTicket(page: import('@playwright/test').Page) {
+	const email = `guest-${Date.now()}@smoke.test`;
+	const res = await page.request.post('/api/public/tickets', {
+		data: {
+			email,
+			title: `Guest Ticket ${Date.now()}`,
+			description: 'created by the tickets e2e spec',
+			// the test env runs turnstile's always-pass key; any non-empty token clears the gate
+			turnstile: 'e2e-token'
+		}
+	});
+	expect(res.ok(), `public ticket create failed: ${res.status()} ${await res.text()}`).toBeTruthy();
+	return (await res.json()) as { ticket_id: number; status_token: string };
+}
+
 // the authenticated dashboard is heavy; local webkit hangs rendering it (not a product
 // bug - it passes on desktop chromium + mobile chrome). scope these to non-webkit
 test.beforeEach(({ browserName }) => {
@@ -251,4 +268,233 @@ test('the timeline renders the created and status-change events', async ({
 	// TicketEvent rows interleave in the thread: the opened event + the status change
 	await expect(page.getByText(/opened this request/i)).toBeVisible({ timeout: 30_000 });
 	await expect(page.getByText(/changed status/i).first()).toBeVisible({ timeout: 30_000 });
+});
+
+test('a custom field renders in the sidebar and saves its value', async ({
+	page,
+	baseURL,
+	isMobile
+}) => {
+	// the staff ticket detail sidebar is heavy; verified on desktop (mobile hangs the nav under load)
+	test.skip(
+		isMobile,
+		'staff ticket detail sidebar is heavy on mobile; custom fields verified on desktop'
+	);
+	const token = await authenticate(page, baseURL);
+	// define a single text custom field (the post replaces the whole global set)
+	const define = await page.request.post('/api/custom-fields', {
+		headers: { Authorization: `Bearer ${token}` },
+		data: { fields: [{ label: 'Order Number', type: 'text' }] }
+	});
+	expect(
+		define.ok(),
+		`custom-field define failed: ${define.status()} ${await define.text()}`
+	).toBeTruthy();
+
+	try {
+		const customer = await createCustomer(page, token);
+		const ticket = await createTicket(page, token, customer.id);
+
+		await page.goto(`/dashboard/tickets/${ticket.id}`, { waitUntil: 'domcontentloaded' });
+		await waitForHydration(page);
+		await expect(page.getByRole('heading', { name: new RegExp(ticket.title, 'i') })).toBeVisible();
+
+		// the sidebar custom-fields panel + the text editor render from the global definition
+		await expect(page.getByText('Custom Fields', { exact: true })).toBeVisible({ timeout: 30_000 });
+		const field = page.getByLabel('Order Number', { exact: true });
+		await expect(field).toBeVisible({ timeout: 30_000 });
+
+		// setting a value patches the ticket (the success toast confirms the round-trip)
+		await field.fill('ORD-4242');
+		await expect(page.getByText('Ticket Updated', { exact: true })).toBeVisible({
+			timeout: 30_000
+		});
+
+		// and it survives a reload (the value was written server-side)
+		await page.reload({ waitUntil: 'domcontentloaded' });
+		await waitForHydration(page);
+		await expect(page.getByLabel('Order Number', { exact: true })).toHaveValue('ORD-4242', {
+			timeout: 30_000
+		});
+	} finally {
+		// reset the global definition so other specs see a clean slate
+		await page.request
+			.post('/api/custom-fields', {
+				headers: { Authorization: `Bearer ${token}` },
+				data: { fields: [] }
+			})
+			.catch(() => {});
+	}
+});
+
+test('a closed request shows the reopen control on the status page', async ({ page }) => {
+	const token = await loginViaApi(page.request, TEST_ADMIN);
+	// customer reopen defaults on; set it explicitly so a prior test can't leave it disabled
+	const settings = await page.request.post('/api/settings', {
+		headers: { Authorization: `Bearer ${token}` },
+		data: { locking: { customer_reopen: true } }
+	});
+	expect(
+		settings.ok(),
+		`settings failed: ${settings.status()} ${await settings.text()}`
+	).toBeTruthy();
+
+	const { ticket_id, status_token } = await createPublicTicket(page);
+	// close it so the reopen control becomes eligible (canReopen needs a closed/archived request)
+	const patch = await page.request.patch(`/api/tickets/${ticket_id}`, {
+		headers: { Authorization: `Bearer ${token}` },
+		data: { status: 'closed' }
+	});
+	expect(patch.ok(), `close failed: ${patch.status()} ${await patch.text()}`).toBeTruthy();
+
+	// view the public status page the way a customer does (drop the staff session)
+	await page.context().clearCookies();
+	await page.goto(`/status/${encodeURIComponent(status_token)}?id=${ticket_id}`, {
+		waitUntil: 'domcontentloaded'
+	});
+	await waitForHydration(page);
+
+	const reopen = page.getByRole('button', { name: /reopen request/i });
+	await expect(reopen).toBeVisible({ timeout: 30_000 });
+	await reopen.click();
+
+	// the reopen succeeds and surfaces the confirmation toast
+	await expect(page.getByText('Request Reopened', { exact: true })).toBeVisible({
+		timeout: 30_000
+	});
+});
+
+test('the message composer toggles markdown preview and the cc field', async ({
+	page,
+	baseURL
+}) => {
+	const token = await authenticate(page, baseURL);
+	const customer = await createCustomer(page, token);
+	const ticket = await createTicket(page, token, customer.id);
+
+	await page.goto(`/dashboard/tickets/${ticket.id}`, { waitUntil: 'domcontentloaded' });
+	await waitForHydration(page);
+	await expect(page.getByRole('heading', { name: new RegExp(ticket.title, 'i') })).toBeVisible();
+
+	const editor = page.getByPlaceholder(/write a reply/i);
+	await expect(editor).toBeVisible();
+
+	// the Bold toolbar button wraps the (empty) selection with markdown markers
+	await page.getByRole('button', { name: 'Bold', exact: true }).click();
+	await expect(editor).toHaveValue('****');
+
+	// typing + Preview swaps the textarea for the rendered markdown; the toggle label flips to Edit
+	await editor.fill('hello **world**');
+	await page.getByRole('button', { name: /^preview$/i }).click();
+	await expect(page.getByRole('button', { name: /^edit$/i })).toBeVisible();
+	await page.getByRole('button', { name: /^edit$/i }).click();
+	await expect(page.getByRole('button', { name: /^preview$/i })).toBeVisible();
+
+	// the Cc toggle reveals the carbon-copy field
+	await page.getByRole('button', { name: 'Cc', exact: true }).click();
+	await expect(page.getByPlaceholder('name@example.com, another@example.com')).toBeVisible();
+});
+
+test('editing a posted message records an edit history', async ({ page, baseURL }) => {
+	const token = await authenticate(page, baseURL);
+	const customer = await createCustomer(page, token);
+	const ticket = await createTicket(page, token, customer.id);
+
+	await page.goto(`/dashboard/tickets/${ticket.id}`, { waitUntil: 'domcontentloaded' });
+	await waitForHydration(page);
+
+	const original = `edit target ${Date.now()}`;
+	await page.getByPlaceholder(/write a reply/i).fill(original);
+	await page.getByRole('button', { name: /send reply/i }).click();
+	await expect(page.getByText(original)).toBeVisible({ timeout: 30_000 });
+
+	// open the inline editor on the message (admin can edit any message), change it, save
+	await page.getByRole('button', { name: 'Edit Message' }).click();
+	const save = page.getByRole('button', { name: 'Save', exact: true });
+	await expect(save).toBeVisible({ timeout: 30_000 });
+	// the inline edit textarea carries no placeholder; the composer does, so this excludes it
+	const editBox = page.locator('textarea:not([placeholder]), textarea[placeholder=""]');
+	await editBox.fill(`edited ${Date.now()}`);
+	await save.click();
+
+	await expect(page.getByText('Message Updated', { exact: true })).toBeVisible({ timeout: 30_000 });
+	// the edited marker + the history toggle appear once a prior version is stored (the label is
+	// "Edited" or "Edited by <name>" depending on whether the editor id resolves client-side)
+	await expect(page.getByText(/^edited\b/i).first()).toBeVisible({ timeout: 30_000 });
+	const viewChanges = page.getByRole('button', { name: /view changes/i });
+	await expect(viewChanges).toBeVisible({ timeout: 30_000 });
+	await viewChanges.click();
+	await expect(page.getByRole('button', { name: /hide changes/i })).toBeVisible({
+		timeout: 30_000
+	});
+});
+
+test('deleting a posted message removes it after the confirm', async ({ page, baseURL }) => {
+	const token = await authenticate(page, baseURL);
+	const customer = await createCustomer(page, token);
+	const ticket = await createTicket(page, token, customer.id);
+
+	await page.goto(`/dashboard/tickets/${ticket.id}`, { waitUntil: 'domcontentloaded' });
+	await waitForHydration(page);
+
+	const doomed = `delete target ${Date.now()}`;
+	await page.getByPlaceholder(/write a reply/i).fill(doomed);
+	await page.getByRole('button', { name: /send reply/i }).click();
+	await expect(page.getByText(doomed)).toBeVisible({ timeout: 30_000 });
+
+	// the delete uses a native confirm(); accept it before the click resolves
+	page.once('dialog', (dialog) => dialog.accept());
+	await page.getByRole('button', { name: 'Delete Message' }).click();
+
+	await expect(page.getByText('Message Deleted', { exact: true })).toBeVisible({ timeout: 30_000 });
+	await expect(page.getByText(doomed)).toHaveCount(0, { timeout: 30_000 });
+});
+
+test('locking then unlocking a thread from the actions bar', async ({ page, baseURL }) => {
+	const token = await authenticate(page, baseURL);
+	const customer = await createCustomer(page, token);
+	const ticket = await createTicket(page, token, customer.id);
+
+	await page.goto(`/dashboard/tickets/${ticket.id}`, { waitUntil: 'domcontentloaded' });
+	await waitForHydration(page);
+	await expect(page.getByRole('heading', { name: new RegExp(ticket.title, 'i') })).toBeVisible();
+
+	// lock the thread; the toast fires and the control flips to Unlock (exact names: "Unlock Thread"
+	// otherwise substring-matches "Lock Thread")
+	await page.getByRole('button', { name: 'Lock Thread', exact: true }).click();
+	await expect(page.getByText('Thread Locked', { exact: true })).toBeVisible({ timeout: 30_000 });
+	const unlock = page.getByRole('button', { name: 'Unlock Thread', exact: true });
+	await expect(unlock).toBeVisible({ timeout: 30_000 });
+
+	// unlock it again
+	await unlock.click();
+	await expect(page.getByText('Thread Unlocked', { exact: true })).toBeVisible({ timeout: 30_000 });
+	await expect(page.getByRole('button', { name: 'Lock Thread', exact: true })).toBeVisible({
+		timeout: 30_000
+	});
+});
+
+test('the tickets list shows the empty state and clears filters', async ({
+	page,
+	baseURL,
+	isMobile
+}) => {
+	// the tabs + filter row interactions are verified on desktop
+	test.skip(isMobile, 'the ticket list tabs are verified on desktop');
+	await authenticate(page, baseURL);
+	await page.goto('/dashboard/tickets', { waitUntil: 'domcontentloaded' });
+	await waitForHydration(page);
+
+	// switching off the default view makes the filter bar dirty and reveals the Clear control
+	await page.getByRole('tab', { name: 'Assigned to Me' }).click();
+	const clear = page.getByRole('button', { name: /^clear$/i });
+	await expect(clear).toBeVisible({ timeout: 30_000 });
+
+	// a no-match search drives the TicketList empty state
+	await page.getByPlaceholder(/search tickets/i).fill(`no-such-ticket-${Date.now()}`);
+	await expect(page.getByText(/no tickets found/i)).toBeVisible({ timeout: 30_000 });
+
+	// Clear resets the search + view back to the default
+	await clear.click();
+	await expect(page.getByPlaceholder(/search tickets/i)).toHaveValue('');
 });
