@@ -27,7 +27,7 @@
     "prepare": "husky install"
   },
   "peerDependencies": {
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3 || ^7.0.0"
   },
   "dependencies": {
     "@codecov/nuxt-plugin": "^2.0.1",
