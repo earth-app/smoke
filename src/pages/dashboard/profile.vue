@@ -146,7 +146,7 @@ async function saveProfile() {
 		const result = await updateUser({
 			first_name: form.first_name.trim() || undefined,
 			last_name: form.last_name.trim() || undefined,
-			name: form.name,
+			name: form.name.trim() || undefined,
 			username: form.username,
 			email: form.email
 		});
