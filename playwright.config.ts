@@ -35,8 +35,14 @@ const reporters: any[] =
 								// as unmatched dist urls that codecov can't place on the repo tree
 								return url.includes('/_nuxt/');
 							},
-							sourceFilter: (path: string) =>
-								path.includes('src/') && !path.includes('node_modules'),
+							sourceFilter: (path: string) => {
+								if (!path.includes('src/') || path.includes('node_modules')) return false;
+								// some bundled deps ship their own src/*.js; the sourcePath trim below
+								// collapses those into our tree as fake 0% files. our real source has no
+								// top-level src/*.js (all .ts/.vue or nested), so drop them
+								if (/(^|\/)src\/[^/]+\.[cm]?js$/.test(path)) return false;
+								return true;
+							},
 							// codecov matches coverage onto the repo tree by repo-relative path, so every
 							// unpacked source must come out as `src/...`; sourcemap sources can be absolute
 							// in CI (/home/runner/work/smoke/smoke/src/...) or carry a virtual prefix, so
