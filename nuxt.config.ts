@@ -91,7 +91,10 @@ export default defineNuxtConfig({
 			cloudflare: {
 				deployConfig: true,
 				nodeCompat: true
-			}
+			},
+			...(E2E_BUILD
+				? {}
+				: { storage: { shield: { driver: 'cloudflare-kv-binding', binding: 'CACHE' } } })
 		}
 	},
 	nitro: {
@@ -108,6 +111,9 @@ export default defineNuxtConfig({
 		},
 		prerender: {
 			ignore: ['/api/**']
+		},
+		storage: {
+			shield: { driver: 'memory' }
 		},
 		routeRules: {
 			'/api/**': { prerender: false, cors: true },
