@@ -236,7 +236,8 @@
 <script setup lang="ts">
 import type { ContextMenuItem, TableColumn } from '@nuxt/ui';
 import { Permission } from '~/shared/types/user';
-import type { AuditEntry, AuditExportFormat, AuditQuery } from '~/stores/audit';
+import type { AuditEntry, AuditExportFormat } from '~/stores/audit';
+import type { AuditQuery } from '~/utils/audit-query';
 
 definePageMeta({ layout: 'dashboard', middleware: 'staff' });
 useSeoMeta({ title: 'Audit Log' });

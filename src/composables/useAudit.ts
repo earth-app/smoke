@@ -1,5 +1,6 @@
-import type { AuditEntry, AuditExportFormat, AuditQuery } from '~/stores/audit';
+import type { AuditEntry, AuditExportFormat } from '~/stores/audit';
 import { useAuditStore } from '~/stores/audit';
+import type { AuditQuery } from '~/utils/audit-query';
 
 export function useAudit() {
 	const auditStore = useAuditStore();

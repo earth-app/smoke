@@ -2,8 +2,6 @@ import { defineStore } from 'pinia';
 import { useAuthStore } from '~/stores/auth';
 import type { AuditQuery } from '~/utils/audit-query';
 
-export type { AuditQuery };
-
 export type AuditEntry = {
 	id: number;
 	created_at: number;
