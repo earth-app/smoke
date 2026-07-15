@@ -96,8 +96,16 @@ test('the customers list shows the empty state for a no-match search', async ({ 
 	await page.goto('/dashboard/customers', { waitUntil: 'domcontentloaded' });
 	await waitForHydration(page);
 
-	// a query with no match drives the debounced search + the empty-result branch
-	await page.getByPlaceholder(/search customers/i).fill(`no-such-customer-${Date.now()}`);
+	// let the initial (no-search) list settle first, else a late initial fetch can resolve after the
+	// search fetch and overwrite the empty result with the full list
+	await expect(page.locator('a[href^="/dashboard/customers/"]').first()).toBeVisible({
+		timeout: 30_000
+	});
+	// a query with no match drives the debounced search + the empty-result branch. wait for the
+	// search to reach the url (the page mirrors it) so the ref bound + the list refetched
+	const q = `no-such-customer-${Date.now()}`;
+	await page.getByPlaceholder(/search customers/i).fill(q);
+	await expect(page).toHaveURL(/[?&]search=/, { timeout: 15_000 });
 	await expect(page.getByText(/no customers found/i)).toBeVisible({ timeout: 30_000 });
 });
 

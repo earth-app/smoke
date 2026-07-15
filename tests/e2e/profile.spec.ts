@@ -106,10 +106,7 @@ test('applying an icon avatar saves it', async ({ page }) => {
 	});
 });
 
-test('linking and unlinking a mailbox updates the panel', async ({ page, isMobile }) => {
-	// on the narrow viewport the wrapped link form's disabled submit button overlaps the row's
-	// Unlink control and intercepts the click; the link/unlink flow is verified on desktop
-	test.skip(isMobile, 'link form overlaps the unlink control on mobile; covered on desktop');
+test('linking and unlinking a mailbox updates the panel', async ({ page }) => {
 	await authenticate(page);
 	await page.goto('/dashboard/profile', { waitUntil: 'domcontentloaded' });
 	await waitForHydration(page);
@@ -119,8 +116,13 @@ test('linking and unlinking a mailbox updates the panel', async ({ page, isMobil
 	});
 
 	const mailbox = `agent-${Date.now()}@smoke.test`;
-	await page.getByPlaceholder('agent@example.com').fill(mailbox);
-	await page.getByRole('button', { name: 'Link Mailbox' }).click();
+	const emailInput = page.getByPlaceholder('agent@example.com');
+	await emailInput.fill(mailbox);
+	// settle-gate: the fill can beat the UInput v-model bind, leaving the submit button disabled
+	await expect(emailInput).toHaveValue(mailbox);
+	const link = page.getByRole('button', { name: 'Link Mailbox' });
+	await expect(link).toBeEnabled();
+	await link.click();
 	await expect(page.getByText('Mailbox Linked', { exact: true })).toBeVisible({ timeout: 30_000 });
 	await expect(page.getByText(mailbox).first()).toBeVisible();
 

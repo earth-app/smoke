@@ -46,8 +46,12 @@ test('the users list renders with the invite control and the table', async ({ pa
 	await expect(page).toHaveURL(/\/dashboard\/users/);
 	await expect(page.getByRole('heading', { name: /^users$/i })).toBeVisible();
 	await expect(page.getByRole('button', { name: /invite agent/i })).toBeVisible();
-	// the UserTable renders the seeded admin row (username is part of "@admin · <email>")
-	await expect(page.getByText(/@admin/).first()).toBeVisible({ timeout: 30_000 });
+	// the UserTable renders user rows (each links to its detail page). assert a row is present
+	// rather than a specific username - invite/join specs accumulate agents and the default list
+	// is limited, so any given account (incl. the seeded admin) may be off page 1
+	await expect(page.locator('a[href^="/dashboard/users/"]').first()).toBeVisible({
+		timeout: 30_000
+	});
 });
 
 test('the invite-agent modal generates a join link', async ({ page }) => {
@@ -104,7 +108,15 @@ test('the users list shows the empty state for a no-match search', async ({ page
 	await page.goto('/dashboard/users', { waitUntil: 'domcontentloaded' });
 	await waitForHydration(page);
 
+	// let the initial (no-search) list settle first, else a late initial fetch can resolve after the
+	// search fetch and overwrite the empty result with the full list
+	await expect(page.locator('a[href^="/dashboard/users/"]').first()).toBeVisible({
+		timeout: 30_000
+	});
 	// the search is debounced then reloads; a no-match query drives the UserTable empty state
-	await page.getByPlaceholder(/search users/i).fill(`no-such-user-${Date.now()}`);
+	const q = `no-such-user-${Date.now()}`;
+	const searchBox = page.getByPlaceholder(/search users/i);
+	await searchBox.fill(q);
+	await expect(searchBox).toHaveValue(q);
 	await expect(page.getByText(/no users found/i)).toBeVisible({ timeout: 30_000 });
 });
