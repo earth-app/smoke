@@ -11,10 +11,7 @@ export const useProjectsStore = defineStore('projects', () => {
 	const list = ref<Project[]>([]);
 	const listInFlight = ref<Promise<Project[]> | null>(null);
 
-	const authHeaders = (): Record<string, string> => {
-		const token = authStore.sessionToken;
-		return token ? { Authorization: `Bearer ${token}` } : {};
-	};
+	const authHeaders = (): Record<string, string> => bearerHeaders(authStore.sessionToken);
 
 	const get = (id: number): Project | undefined => list.value.find((project) => project.id === id);
 

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { type User } from '~/shared/types/user';
 
 export const useUserStore = defineStore('user', () => {
+	const authStore = useAuthStore();
 	const cache = reactive(new Map<string, User>());
 	const avatars = reactive(new Map<string, Blob>());
 
@@ -120,41 +121,15 @@ export const useUserStore = defineStore('user', () => {
 		avatar: File | Blob | ArrayBuffer | string | { icon: string }
 	) => {
 		try {
-			let body: FormData | { url: string } | { base64: string } | { icon: string } | null = null;
-
-			// { icon } -> iconify avatar
-			if (typeof avatar === 'object' && avatar !== null && 'icon' in avatar) {
-				body = { icon: avatar.icon };
-			}
-
-			// file, blob, array buffer -> multipart form data
-			if (avatar instanceof File || avatar instanceof Blob) {
-				body = new FormData();
-				body.append('avatar', avatar);
-			}
-
-			if (avatar instanceof ArrayBuffer) {
-				body = new FormData();
-				body.append('avatar', new Blob([avatar]));
-			}
-
-			// string -> url or base64
-			if (typeof avatar === 'string') {
-				// disallow http urls for security reasons, only allow https or data uris
-				if (avatar.startsWith('https://')) {
-					body = { url: avatar };
-				} else if (avatar.startsWith('data:image/')) {
-					body = { base64: avatar };
-				} else {
-					throw new Error('Invalid avatar string format');
-				}
-			}
+			const body = resolveAvatarBody(avatar);
 
 			// the endpoint returns the updated user, not the image blob
 			const updatedUser = await $fetch<User>(`/api/users/${encodeURIComponent(userId)}/avatar`, {
 				method: 'POST',
 				body,
-				credentials: 'include'
+				credentials: 'include',
+				// avatar.post is Bearer-gated (ensureLoggedIn); the cookie alone 401s
+				headers: bearerHeaders(authStore.sessionToken)
 			});
 
 			set(updatedUser);
@@ -191,10 +166,7 @@ export const useCustomerStore = defineStore('customer', () => {
 	const listInFlight = reactive(new Map<string, Promise<Customer[]>>());
 	const getInFlight = reactive(new Map<number, Promise<Customer | null>>());
 
-	const authHeaders = (): Record<string, string> => {
-		const token = authStore.sessionToken;
-		return token ? { Authorization: `Bearer ${token}` } : {};
-	};
+	const authHeaders = (): Record<string, string> => bearerHeaders(authStore.sessionToken);
 
 	const set = (customer: Customer) => {
 		cache.set(customer.id, customer);

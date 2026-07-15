@@ -9,10 +9,7 @@ export const useSettingsStore = defineStore('settings', () => {
 	const settings = ref<Settings | null>(null);
 	const fetchPromise = ref<Promise<Settings | null> | null>(null);
 
-	const authHeaders = (): Record<string, string> => {
-		const token = authStore.sessionToken;
-		return token ? { Authorization: `Bearer ${token}` } : {};
-	};
+	const authHeaders = (): Record<string, string> => bearerHeaders(authStore.sessionToken);
 
 	const fetch = async (force: boolean = false): Promise<Settings | null> => {
 		if (fetchPromise.value) return fetchPromise.value;
@@ -70,16 +67,7 @@ export const useSettingsStore = defineStore('settings', () => {
 	// merge a partial email config into the persisted one so independent cards (outbound smtp,
 	// inbound poll) never clobber each other; the server replaces the whole email blob on save
 	const saveEmail = async (partial: Record<string, any>): Promise<Settings> => {
-		const current = { ...((settings.value?.email as Record<string, any>) || {}) };
-		const merged: Record<string, any> = { ...current, ...partial };
-		if (current.smtp || partial.smtp) {
-			merged.smtp = { ...(current.smtp || {}), ...(partial.smtp || {}) };
-			delete merged.smtp.has_password;
-		}
-		if (current.poll || partial.poll) {
-			merged.poll = { ...(current.poll || {}), ...(partial.poll || {}) };
-			delete merged.poll.has_password;
-		}
+		const merged = mergeEmailSettings(settings.value?.email as Record<string, any>, partial);
 		return await save({ email: merged });
 	};
 

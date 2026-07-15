@@ -27,10 +27,7 @@ export const useTicketStore = defineStore('ticket', () => {
 	const getInFlight = reactive(new Map<number, Promise<Ticket | null>>());
 	const threadInFlight = reactive(new Map<number, Promise<TicketThread | null>>());
 
-	const authHeaders = (): Record<string, string> => {
-		const token = authStore.sessionToken;
-		return token ? { Authorization: `Bearer ${token}` } : {};
-	};
+	const authHeaders = (): Record<string, string> => bearerHeaders(authStore.sessionToken);
 
 	const set = (ticket: Ticket) => {
 		cache.set(ticket.id, ticket);
@@ -123,20 +120,10 @@ export const useTicketStore = defineStore('ticket', () => {
 
 				set(ticket);
 
-				// derive the distinct participants from message senders
-				const seen = new Set<string>();
-				const users: TicketThread['users'] = [];
-				for (const message of messages) {
-					const key = `${message.sender.kind}:${message.sender.id}`;
-					if (seen.has(key)) continue;
-					seen.add(key);
-					users.push(message.sender);
-				}
-
 				const thread: TicketThread = {
 					ticket,
 					messages,
-					users,
+					users: deriveThreadUsers(messages),
 					events: eventsRes?.events ?? []
 				};
 				threads.set(id, thread);

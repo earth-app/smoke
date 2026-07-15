@@ -37,10 +37,7 @@ export const useCloudflareStore = defineStore('cloudflare', () => {
 
 	const zones = computed<CloudflareZone[]>(() => status.value?.zones ?? []);
 
-	const authHeaders = (): Record<string, string> => {
-		const token = authStore.sessionToken;
-		return token ? { Authorization: `Bearer ${token}` } : {};
-	};
+	const authHeaders = (): Record<string, string> => bearerHeaders(authStore.sessionToken);
 
 	const fetchStatus = async (force: boolean = false): Promise<CloudflareStatus | null> => {
 		if (statusPromise.value) return statusPromise.value;

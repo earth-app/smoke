@@ -24,23 +24,6 @@ export const useAuthStore = defineStore('auth', () => {
 	const isAuthenticated = computed(() => !!currentUser.value && !!sessionToken.value);
 	const isAdmin = computed(() => currentUser.value?.role === Role.Admin);
 
-	const normalizeSessionToken = (token: string | null | undefined): string | null => {
-		if (!token) return null;
-
-		let normalized = token.trim();
-		try {
-			normalized = decodeURIComponent(normalized);
-		} catch {
-			// keep the raw token if it's not URL encoded
-		}
-
-		if (normalized.length >= 2 && normalized.startsWith('"') && normalized.endsWith('"')) {
-			normalized = normalized.slice(1, -1);
-		}
-
-		return normalized || null;
-	};
-
 	const readLastLogoutAt = (): number => {
 		if (import.meta.server) return 0;
 

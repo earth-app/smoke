@@ -11,10 +11,7 @@ export const useAnalyticsStore = defineStore('analytics', () => {
 	const cache = reactive(new Map<AnalyticsRange, AnalyticsSummary>());
 	const inFlight = reactive(new Map<AnalyticsRange, Promise<AnalyticsSummary | null>>());
 
-	const authHeaders = (): Record<string, string> => {
-		const token = authStore.sessionToken;
-		return token ? { Authorization: `Bearer ${token}` } : {};
-	};
+	const authHeaders = (): Record<string, string> => bearerHeaders(authStore.sessionToken);
 
 	const summary = async (
 		range: AnalyticsRange = '7d',

@@ -9,10 +9,7 @@ export const useLabelsStore = defineStore('labels', () => {
 	const listInFlight = reactive(new Map<string, Promise<Label[]>>());
 	const getInFlight = reactive(new Map<number, Promise<Label | null>>());
 
-	const authHeaders = (): Record<string, string> => {
-		const token = authStore.sessionToken;
-		return token ? { Authorization: `Bearer ${token}` } : {};
-	};
+	const authHeaders = (): Record<string, string> => bearerHeaders(authStore.sessionToken);
 
 	const set = (label: Label) => {
 		cache.set(label.id, label);

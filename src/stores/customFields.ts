@@ -9,10 +9,7 @@ export const useCustomFieldsStore = defineStore('customFields', () => {
 	const loaded = ref(false);
 	const fetchPromise = ref<Promise<CustomFieldDef[]> | null>(null);
 
-	const authHeaders = (): Record<string, string> => {
-		const token = authStore.sessionToken;
-		return token ? { Authorization: `Bearer ${token}` } : {};
-	};
+	const authHeaders = (): Record<string, string> => bearerHeaders(authStore.sessionToken);
 
 	const fetch = async (force: boolean = false): Promise<CustomFieldDef[]> => {
 		if (fetchPromise.value) return fetchPromise.value;
