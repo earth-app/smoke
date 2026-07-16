@@ -437,7 +437,7 @@ export async function decrypt(
 
 export async function hashPassword(
 	password: string,
-	algorithm: PasswordAlgorithm = 'argon2id'
+	algorithm: PasswordAlgorithm = 'bcrypt'
 ): Promise<{
 	password_hash: Uint8Array;
 	password_salt: Uint8Array;
