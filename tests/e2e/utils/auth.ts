@@ -1,13 +1,18 @@
 import { expect, type APIRequestContext, type Page } from '@playwright/test';
 import { waitForHydration } from './hydration';
 
-export const TEST_ADMIN = {
-	username: 'admin',
-	email: 'admin@smoke.test',
-	password: 'Password123!'
-};
-
 type Creds = { username: string; email?: string; password: string };
+type AdminCreds = Creds & { email: string };
+
+export const TEST_ADMINS: AdminCreds[] = [
+	{ username: 'admin', email: 'admin@smoke.test', password: 'Password123!' },
+	{ username: 'admin1', email: 'admin1@smoke.test', password: 'Password123!' },
+	{ username: 'admin2', email: 'admin2@smoke.test', password: 'Password123!' },
+	{ username: 'admin3', email: 'admin3@smoke.test', password: 'Password123!' }
+];
+
+const WORKER_INDEX = Number(process.env.TEST_PARALLEL_INDEX ?? 0);
+export const TEST_ADMIN: AdminCreds = TEST_ADMINS[WORKER_INDEX] ?? TEST_ADMINS[0]!;
 
 // log in over the api; returns the session token. checks an existing session first
 // so repeated logins don't trip the auth rate limiter
