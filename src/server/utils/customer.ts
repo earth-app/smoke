@@ -98,12 +98,6 @@ export async function createCustomer(
 	actor?: CustomerAuditActor
 ): Promise<Customer> {
 	ensureCollegeDB(env);
-	const maxRow = await first<{ id: number }>(
-		'customers',
-		`SELECT COALESCE(MAX(id), 0) + 1 AS id FROM customers`,
-		[]
-	);
-	const nextId = Number(maxRow?.id ?? 1);
 	const nowSeconds = Math.floor(Date.now() / 1000);
 	const nowIso = new Date(nowSeconds * 1000).toISOString();
 
@@ -115,21 +109,33 @@ export async function createCustomer(
 		updated_at: nowIso
 	};
 
+	// encryption is id-independent, so compute once; only the id read + insert retries on collision
 	const encrypted = await encrypt(payload, env.MASTER_KEY);
-	await run(
-		String(nextId),
-		`INSERT INTO customers (id, avatar_url, created_at, data, wrapped_dek, nonce, tag, algorithm, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		[
-			nextId,
-			input.avatar_url || null,
-			nowSeconds,
-			encrypted.ciphertext,
-			encrypted.wrapped_dek,
-			encrypted.nonce,
-			encrypted.tag,
-			encrypted.algorithm,
-			encrypted.version
-		]
+	const nextId = await insertWithNextId(
+		async () => {
+			const maxRow = await first<{ id: number }>(
+				'customers',
+				`SELECT COALESCE(MAX(id), 0) + 1 AS id FROM customers`,
+				[]
+			);
+			return Number(maxRow?.id ?? 1);
+		},
+		(id: number) =>
+			run(
+				String(id),
+				`INSERT INTO customers (id, avatar_url, created_at, data, wrapped_dek, nonce, tag, algorithm, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				[
+					id,
+					input.avatar_url || null,
+					nowSeconds,
+					encrypted.ciphertext,
+					encrypted.wrapped_dek,
+					encrypted.nonce,
+					encrypted.tag,
+					encrypted.algorithm,
+					encrypted.version
+				]
+			)
 	);
 
 	const createdRow = await getCustomerRowById(nextId);

@@ -5,18 +5,24 @@ import type { DBLabel } from 'hub:db:schema';
 type AuditOpts = { env?: any; actorId?: string | null; actorName?: string | null };
 
 export async function createLabel(name: string, color?: string, opts?: AuditOpts): Promise<Label> {
-	const maxRow = await first<{ id: number }>(
-		'labels',
-		`SELECT COALESCE(MAX(id), 0) + 1 AS id FROM labels`,
-		[]
-	);
-	const nextId = Number(maxRow?.id ?? 1);
 	const nowSeconds = Math.floor(Date.now() / 1000);
 
-	await run(
-		String(nextId),
-		`INSERT INTO labels (id, name, color, created_at) VALUES (?, ?, ?, ?)`,
-		[nextId, name, color ?? null, nowSeconds]
+	const nextId = await insertWithNextId(
+		async () => {
+			const maxRow = await first<{ id: number }>(
+				'labels',
+				`SELECT COALESCE(MAX(id), 0) + 1 AS id FROM labels`,
+				[]
+			);
+			return Number(maxRow?.id ?? 1);
+		},
+		(id: number) =>
+			run(String(id), `INSERT INTO labels (id, name, color, created_at) VALUES (?, ?, ?, ?)`, [
+				id,
+				name,
+				color ?? null,
+				nowSeconds
+			])
 	);
 
 	const label = await getLabelById(nextId);

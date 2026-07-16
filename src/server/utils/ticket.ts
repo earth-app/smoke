@@ -812,12 +812,6 @@ export async function createTicket(
 		validateCustomFieldValues(await listCustomFields(), input.custom_fields);
 	}
 
-	const maxRow = await first<{ id: number }>(
-		'tickets',
-		`SELECT COALESCE(MAX(id), 0) + 1 AS id FROM tickets`,
-		[]
-	);
-	const nextId = Number(maxRow?.id ?? 1);
 	const nowSeconds = Math.floor(Date.now() / 1000);
 
 	const labels = joinCsvNumberList(input.labels);
@@ -836,24 +830,35 @@ export async function createTicket(
 	// 0 = customer-less internal ticket (e.g. bug tracking)
 	const customerId = input.customer_id ?? 0;
 
-	await run(
-		String(nextId),
-		`INSERT INTO tickets (
-			id, title, created_at, updated_at, description, customer_id, status, priority, labels, assignees, private
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		[
-			nextId,
-			input.title,
-			nowSeconds,
-			nowSeconds,
-			input.description,
-			customerId,
-			input.status ?? TicketStatus.Open,
-			input.priority ?? TicketPriority.None,
-			labels,
-			assignees,
-			privateCol
-		]
+	const nextId = await insertWithNextId(
+		async () => {
+			const maxRow = await first<{ id: number }>(
+				'tickets',
+				`SELECT COALESCE(MAX(id), 0) + 1 AS id FROM tickets`,
+				[]
+			);
+			return Number(maxRow?.id ?? 1);
+		},
+		(id: number) =>
+			run(
+				String(id),
+				`INSERT INTO tickets (
+					id, title, created_at, updated_at, description, customer_id, status, priority, labels, assignees, private
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				[
+					id,
+					input.title,
+					nowSeconds,
+					nowSeconds,
+					input.description,
+					customerId,
+					input.status ?? TicketStatus.Open,
+					input.priority ?? TicketPriority.None,
+					labels,
+					assignees,
+					privateCol
+				]
+			)
 	);
 
 	const projectIds = resolveProjectIds(input);
