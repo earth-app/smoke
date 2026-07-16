@@ -5,10 +5,16 @@ const SETUP_COOKIE = 'smoke_setup';
 
 export default defineEventHandler(async (event) => {
 	const env = event.context.cloudflare.env;
-	ensureCollegeDB(env);
 
-	const users = await listUsers(env, '', 1, 1, 0, 'created_at', 'desc');
-	const userCount = users.length;
+	let userCount = 0;
+	try {
+		ensureCollegeDB(env);
+		const users = await listUsers(env, '', 1, 1, 0, 'created_at', 'desc');
+		userCount = users.length;
+	} catch (error) {
+		console.error('[setup/status] user count read failed; assuming setup is needed', error);
+		userCount = 0;
+	}
 
 	let flagged = false;
 	try {
