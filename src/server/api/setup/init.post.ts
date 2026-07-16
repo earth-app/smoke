@@ -1,4 +1,4 @@
-import { ensureCollegeDB } from 'hub:db:schema';
+import { ensureCollegeDB, ensureSchema } from 'hub:db:schema';
 import z from 'zod';
 import { Role } from '~/shared/types/user';
 import * as schemas from '~/shared/utils/schemas';
@@ -61,6 +61,7 @@ const bodySchema = z.object({
 export default defineEventHandler(async (event) => {
 	const env = event.context.cloudflare.env;
 	ensureCollegeDB(env);
+	await ensureSchema(env);
 
 	const existing = await listUsers(env, '', 1, 1, 0, 'created_at', 'desc');
 	if (existing.length > 0) {
