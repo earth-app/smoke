@@ -2,6 +2,7 @@
 .output
 .data
 .data-setup
+.data-e2e
 .nuxt
 .nuxt-setup
 .nitro
