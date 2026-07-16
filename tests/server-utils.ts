@@ -11,6 +11,7 @@ import * as cloudflare from '~/server/utils/cloudflare';
 import * as customFields from '~/server/utils/custom-fields';
 import * as customer from '~/server/utils/customer';
 import * as customerAuth from '~/server/utils/customer-auth';
+import * as dbId from '~/server/utils/db-id';
 import * as email from '~/server/utils/email';
 import * as emailPoll from '~/server/utils/email-poll';
 import * as encryption from '~/server/utils/encryption';
@@ -48,6 +49,7 @@ const modules = [
 	customFields,
 	ticket,
 	customerAuth,
+	dbId,
 	label,
 	email,
 	emailPoll,
@@ -77,6 +79,7 @@ export * from '~/server/utils/cloudflare';
 export * from '~/server/utils/custom-fields';
 export * from '~/server/utils/customer';
 export * from '~/server/utils/customer-auth';
+export * from '~/server/utils/db-id';
 export * from '~/server/utils/email';
 export * from '~/server/utils/email-poll';
 export * from '~/server/utils/encryption';
