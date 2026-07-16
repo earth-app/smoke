@@ -81,17 +81,14 @@ export default defineConfig({
 			}),
 	webServer: SETUP
 		? {
-				// dev:setup boots a fresh instance on 4001; reuse:false guarantees a clean unseeded server
-				command: 'bun run dev:setup',
+				command: 'test -f .output/server/index.mjs || bun run build:e2e && bun run preview:setup',
 				url: BASE_URL,
 				reuseExistingServer: false,
-				timeout: 240_000,
+				timeout: 360_000,
 				stdout: 'pipe',
 				stderr: 'pipe'
 			}
 		: {
-				// coverage runs against a production build + node preview (source-mapped);
-				// the normal lane uses the dev server. build:e2e runs first via the test:e2e:coverage script
 				command: COVERAGE ? 'bun run preview:e2e' : 'bun run dev:test',
 				url: BASE_URL,
 				reuseExistingServer: !isCI,
