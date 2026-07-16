@@ -33,7 +33,10 @@ export default defineNuxtConfig({
 			// favicon/theme fallbacks; the favicon.* routes resolve kv settings then fall back to these
 			themeColor: process.env.NUXT_PUBLIC_THEME_COLOR || '#3b82f6',
 			favicon: process.env.NUXT_PUBLIC_FAVICON || '/_favicon.ico',
-			faviconPng: process.env.NUXT_PUBLIC_FAVICON_PNG || '/_favicon.png'
+			faviconPng: process.env.NUXT_PUBLIC_FAVICON_PNG || '/_favicon.png',
+			turnstile: {
+				siteKey: process.env.NUXT_PUBLIC_TURNSTILE_SITE_KEY || ''
+			}
 		},
 		turnstile: {
 			secretKey: process.env.NUXT_TURNSTILE_SECRET_KEY || ''
