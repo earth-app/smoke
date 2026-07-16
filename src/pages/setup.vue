@@ -131,6 +131,21 @@
 								/>
 							</div>
 						</UFormField>
+						<USeparator label="Advanced" />
+						<UFormField
+							label="Encryption Key Iterations"
+							hint="PBKDF2 rounds; default 100,000"
+							help="Rounds used to derive the data-encryption key from your MASTER_KEY. Cloudflare Workers cap this at 100,000. Smaller is faster but less secure."
+						>
+							<UInput
+								v-model.number="pbkdf2Iterations"
+								type="number"
+								:min="1000"
+								:max="100000"
+								:step="1000"
+								class="w-full"
+							/>
+						</UFormField>
 					</div>
 				</div>
 
@@ -596,6 +611,7 @@ const lastName = ref('');
 const password = ref('');
 const confirm = ref('');
 const adminAvatar = ref('');
+const pbkdf2Iterations = ref(100000);
 
 // a bare iconify name becomes an `icon:` sentinel; https urls pass through
 const adminAvatarResolved = computed(() => {
@@ -841,6 +857,7 @@ async function finish() {
 					description: description.value.trim(),
 					themeColor: themeColor.value.trim(),
 					favicon: favicon.value.trim(),
+					security: { pbkdf2_iterations: pbkdf2Iterations.value },
 					role_colors: buildRoleColors(),
 					...(Object.keys(buildRoleIcons()).length ? { role_icons: buildRoleIcons() } : {}),
 					...(aiEnabled.value

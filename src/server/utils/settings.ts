@@ -1,4 +1,5 @@
 import type { EncryptionAlgorithm } from './encryption';
+import { PBKDF2_MAX_ITERATIONS, PBKDF2_MIN_ITERATIONS, setPbkdf2Iterations } from './encryption';
 
 // #region keys + types
 
@@ -39,7 +40,8 @@ const JSON_SETTING_KEYS = [
 	'ai',
 	'role_icons',
 	'role_colors',
-	'avatars'
+	'avatars',
+	'security'
 ] as const;
 
 // default workers ai model; agent verifies against the live catalog at build time
@@ -331,6 +333,24 @@ export async function getAvatarPolicy(): Promise<AvatarPolicy> {
 	};
 }
 
+export type SecuritySettings = {
+	// pbkdf2 iteration count for envelope-encryption kek derivation; default is the workers max
+	pbkdf2_iterations: number;
+};
+
+export async function getSecuritySettings(): Promise<SecuritySettings> {
+	const stored = await getJson<Partial<SecuritySettings>>('security', {});
+	const raw =
+		typeof stored.pbkdf2_iterations === 'number' ? stored.pbkdf2_iterations : PBKDF2_MAX_ITERATIONS;
+	const pbkdf2_iterations = Math.min(
+		PBKDF2_MAX_ITERATIONS,
+		Math.max(PBKDF2_MIN_ITERATIONS, Math.floor(raw))
+	);
+	// keep the crypto module's active count in sync with the persisted preference
+	setPbkdf2Iterations(pbkdf2_iterations);
+	return { pbkdf2_iterations };
+}
+
 // full public-safe settings for the settings api + client store (never secrets)
 export async function getAllSettings() {
 	const strings: Partial<Record<(typeof STRING_SETTING_KEYS)[number], string>> = {};
@@ -353,7 +373,8 @@ export async function getAllSettings() {
 		ai,
 		roleIcons,
 		roleColors,
-		avatarPolicy
+		avatarPolicy,
+		security
 	] = await Promise.all([
 		getEmailSettings(),
 		getCloudflareSettings(),
@@ -367,7 +388,8 @@ export async function getAllSettings() {
 		getAiSettings(),
 		getRoleIcons(),
 		getRoleColors(),
-		getAvatarPolicy()
+		getAvatarPolicy(),
+		getSecuritySettings()
 	]);
 	// redact anything sensitive before it leaves the server
 	const emailPublic: Record<string, unknown> = { ...email };
@@ -404,7 +426,8 @@ export async function getAllSettings() {
 		ai,
 		role_icons: roleIcons,
 		role_colors: roleColors,
-		avatars: avatarPolicy
+		avatars: avatarPolicy,
+		security
 	};
 }
 

@@ -71,6 +71,12 @@ export default defineEventHandler(async (event) => {
 
 	const body = await readValidatedBody(event, bodySchema.parse);
 
+	const securityInput = (body.settings as Record<string, any> | undefined)?.security;
+	if (securityInput && typeof securityInput === 'object') {
+		await setJsonSetting('security', securityInput);
+	}
+	await getSecuritySettings();
+
 	const { id, sessionToken } = await createUser(body.username, body.email, Role.Admin, env);
 
 	// setting the password is the one non-recoverable step; if it throws, roll the admin back
