@@ -1,6 +1,6 @@
 services:
   greenmail:
-    image: greenmail/standalone:2.1.10
+    image: greenmail/standalone:2.1.11
     environment:
       GREENMAIL_OPTS: '-Dgreenmail.setup.test.all -Dgreenmail.hostname=0.0.0.0 -Dgreenmail.users=tester:testpass@localhost -Dgreenmail.verbose'
     healthcheck:
