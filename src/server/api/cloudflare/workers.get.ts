@@ -19,8 +19,14 @@ export default defineEventHandler(async (event) => {
 			});
 		}
 	} else {
-		const users = await listUsers(env, '', 1, 1, 0, 'created_at', 'desc');
-		if (users.length > 0) {
+		let userCount = 0;
+		try {
+			const users = await listUsers(env, '', 1, 1, 0, 'created_at', 'desc');
+			userCount = users.length;
+		} catch (error) {
+			console.error('[cloudflare/workers] user count read failed; treating as first-run', error);
+		}
+		if (userCount > 0) {
 			throw createError({ statusCode: 401, message: 'Authentication required' });
 		}
 	}
