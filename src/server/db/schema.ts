@@ -231,6 +231,12 @@ const SCHEMA_DDL = [
 	`CREATE INDEX IF NOT EXISTS idx_tickets_customer_id ON tickets (customer_id)`,
 	`CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets (status)`,
 	`CREATE INDEX IF NOT EXISTS idx_tickets_created_at ON tickets (created_at)`,
+	`CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at INTEGER NOT NULL, action TEXT NOT NULL, actor_id TEXT, actor_name TEXT, target_type TEXT, target_id TEXT, ticket_id INTEGER, priority TEXT, summary TEXT, context TEXT)`,
+	`CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_log (created_at)`,
+	`CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log (action)`,
+	`CREATE INDEX IF NOT EXISTS idx_audit_actor_id ON audit_log (actor_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_audit_ticket_id ON audit_log (ticket_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_audit_priority ON audit_log (priority)`,
 	// column additions for existing tables; CREATE IF NOT EXISTS never alters a pre-existing table,
 	// so these run per-upgrade (they no-op with a benign "duplicate column" error on fresh dbs)
 	`ALTER TABLE tickets ADD COLUMN history_data BLOB`,
@@ -238,25 +244,17 @@ const SCHEMA_DDL = [
 	`ALTER TABLE tickets ADD COLUMN history_nonce BLOB`,
 	`ALTER TABLE tickets ADD COLUMN history_tag BLOB`,
 	`ALTER TABLE tickets ADD COLUMN history_algorithm TEXT`,
-	`ALTER TABLE tickets ADD COLUMN history_version INTEGER`,
-	`CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at INTEGER NOT NULL, action TEXT NOT NULL, actor_id TEXT, actor_name TEXT, target_type TEXT, target_id TEXT, ticket_id INTEGER, priority TEXT, summary TEXT, context TEXT)`,
-	`CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_log (created_at)`,
-	`CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log (action)`,
-	`CREATE INDEX IF NOT EXISTS idx_audit_actor_id ON audit_log (actor_id)`,
-	`CREATE INDEX IF NOT EXISTS idx_audit_ticket_id ON audit_log (ticket_id)`,
-	`CREATE INDEX IF NOT EXISTS idx_audit_priority ON audit_log (priority)`
+	`ALTER TABLE tickets ADD COLUMN history_version INTEGER`
 ];
 
-let schemaEnsured = false;
+let ensuredBindings = new WeakSet<object>();
 
 export function resetSchemaEnsured() {
-	schemaEnsured = false;
+	ensuredBindings = new WeakSet<object>();
 }
 
-// run the ddl on every discovered shard once per process (idempotent via IF NOT EXISTS)
-export async function ensureSchema(env: any): Promise<void> {
-	if (schemaEnsured) return;
-
+// env.DB + every discovered DB_* shard binding
+function collectShardBindings(env: any): unknown[] {
 	const bindings: unknown[] = env?.DB ? [env.DB] : [];
 	for (const key of Object.keys(env ?? {})) {
 		if (key === 'KV' || key === 'CACHE' || key === 'EMAIL' || key === 'ShardCoordinator') continue;
@@ -264,8 +262,14 @@ export async function ensureSchema(env: any): Promise<void> {
 			if (env[key]) bindings.push(env[key]);
 		}
 	}
+	return bindings;
+}
 
-	for (const binding of bindings) {
+export async function ensureSchema(env: any): Promise<void> {
+	for (const binding of collectShardBindings(env)) {
+		if (!binding || typeof binding !== 'object') continue;
+		if (ensuredBindings.has(binding as object)) continue;
+
 		let client: DrizzleClientLike | null = null;
 		const candidate = binding as DrizzleClientLike & { prepare?: unknown };
 		if (typeof candidate?.run === 'function') {
@@ -279,6 +283,7 @@ export async function ensureSchema(env: any): Promise<void> {
 		}
 		if (!client?.run) continue;
 
+		// local sqlite (test/parallel lanes) benefits from these; d1 rejects them -- best-effort
 		for (const pragma of ['PRAGMA busy_timeout = 5000', 'PRAGMA journal_mode = WAL']) {
 			try {
 				await client.run(sql.raw(pragma));
@@ -287,6 +292,7 @@ export async function ensureSchema(env: any): Promise<void> {
 			}
 		}
 
+		let ok = true;
 		for (const statement of SCHEMA_DDL) {
 			try {
 				await client.run(sql.raw(statement));
@@ -296,12 +302,14 @@ export async function ensureSchema(env: any): Promise<void> {
 				const err = error as { message?: string; cause?: { message?: string } };
 				const text = `${err?.message ?? ''} ${err?.cause?.message ?? ''}`;
 				if (/duplicate column name|already exists/i.test(text)) continue;
-				console.warn('ensureSchema statement failed', error);
+				console.error('[ensureSchema] statement failed', text || error);
+				ok = false;
 			}
 		}
-	}
 
-	schemaEnsured = true;
+		// only skip this shard next time if its ddl fully applied
+		if (ok) ensuredBindings.add(binding as object);
+	}
 }
 
 export function ensureCollegeDB(env: any) {
