@@ -11,9 +11,6 @@ async function authenticate(page: import('@playwright/test').Page): Promise<stri
 	return await loginViaApi(page.request, TEST_ADMIN);
 }
 
-// the settings page nests the dashboard sidebar plus a vertical UTabs; on a narrow mobile
-// viewport the sidebar stays expanded and squeezes the tab-content column off-screen (a zero-width
-// panel reads as hidden), so these admin-only settings flows are verified on desktop
 test.beforeEach(({ isMobile }) => {
 	test.skip(
 		!!isMobile,
@@ -126,6 +123,25 @@ test('the branding tab saves role icons and role colors', async ({ page }) => {
 	await page.getByRole('button', { name: /save role colors/i }).click();
 	await expect(page.getByText('Role Colors Saved', { exact: true })).toBeVisible({
 		timeout: 30_000
+	});
+});
+
+test('role icon field loads its saved value without any interaction', async ({ page }) => {
+	const token = await authenticate(page);
+
+	const icon = `mdi:star-${Date.now() % 100000}`;
+	const res = await page.request.post('/api/settings', {
+		headers: { Authorization: `Bearer ${token}` },
+		data: { role_icons: { agent: icon } }
+	});
+	expect(res.ok(), `settings save failed: ${res.status()} ${await res.text()}`).toBeTruthy();
+
+	await page.goto('/dashboard/settings', { waitUntil: 'domcontentloaded' });
+	await waitForHydration(page);
+
+	// no clicks: the agent role-icon input (unique by placeholder) shows the saved value on load
+	await expect(page.getByPlaceholder('mdi:account', { exact: true })).toHaveValue(icon, {
+		timeout: 15_000
 	});
 });
 

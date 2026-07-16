@@ -40,7 +40,11 @@ describe('GET /api/settings', () => {
 		expect(settings.email.smtp.host).toBe('smtp.acme.test');
 		expect(settings.email.smtp.password).toBeUndefined();
 		// public-safe turnstile status; unconfigured in the default harness, never the secret
-		expect(settings.turnstile).toEqual({ configured: false });
+		expect(settings.turnstile).toEqual({
+			configured: false,
+			hasSiteKey: false,
+			hasSecretKey: false
+		});
 	});
 });
 
