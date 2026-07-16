@@ -265,8 +265,10 @@ export async function setupApiRuntime(): Promise<RouteRuntime> {
 	resetConfig();
 	clearMigrationCache();
 
-	const { resetCollegeDB, ensureCollegeDB } = await import('~/server/db/schema');
+	const { resetCollegeDB, resetSchemaEnsured, ensureCollegeDB, ensureSchema } =
+		await import('~/server/db/schema');
 	resetCollegeDB();
+	resetSchemaEnsured();
 
 	// the cache L1 is module-scoped, so a hit from a prior test would survive the in-memory kv reset
 	const { resetCache } = await import('~/server/utils/cache');
@@ -274,6 +276,7 @@ export async function setupApiRuntime(): Promise<RouteRuntime> {
 
 	runtime = await buildRuntime();
 	ensureCollegeDB(runtime.env);
+	await ensureSchema(runtime.env);
 	// bare `kv` is auto-imported in nitro; expose the in-memory adapter for the harness
 	(globalThis as Record<string, unknown>).kv = runtime.hubKv;
 	return runtime;

@@ -32,6 +32,24 @@ describe('GET /api/setup/status', () => {
 			userCount: 1
 		});
 	});
+
+	it('reports setup needed instead of 500 when the user read throws', async () => {
+		const runtime = getRuntime();
+		const handler = await importRoute('~/server/api/setup/status.get');
+
+		const realListUsers = (globalThis as any).listUsers;
+		(globalThis as any).listUsers = () => {
+			throw new Error('db unavailable');
+		};
+		try {
+			await expect(handler(eventFor(runtime.env))).resolves.toMatchObject({
+				needsSetup: true,
+				userCount: 0
+			});
+		} finally {
+			(globalThis as any).listUsers = realListUsers;
+		}
+	});
 });
 
 describe('POST /api/setup/init', () => {
