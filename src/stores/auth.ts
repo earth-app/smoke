@@ -14,6 +14,11 @@ export const useAuthStore = defineStore('auth', () => {
 		sameSite: (isE2E ? 'lax' : 'none') as 'lax' | 'none'
 	};
 
+	// request-scoped fetch: during ssr it routes internal api calls IN-PROCESS. a bare $fetch to a
+	// relative url resolves to the worker's own public origin and makes a real subrequest -- a worker
+	// calling itself hangs (~request timeout), which is why authenticated /dashboard/** ssr stalled
+	const requestFetch = useRequestFetch();
+
 	// undefined = loading, null = not logged in, User = logged in
 	const currentUser = ref<User | null | undefined>(null);
 	const sessionToken = ref<string | null>(null);
@@ -141,7 +146,7 @@ export const useAuthStore = defineStore('auth', () => {
 					return;
 				}
 
-				const response = await $fetch<User>(`/api/users/current`, {
+				const response = await requestFetch<User>(`/api/users/current`, {
 					headers: {
 						Authorization: `Bearer ${sessionToken.value}`,
 						Accept: 'application/json'

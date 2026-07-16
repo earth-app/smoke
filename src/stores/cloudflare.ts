@@ -1,7 +1,14 @@
 import { defineStore } from 'pinia';
 import { useAuthStore } from '~/stores/auth';
 
-export type CloudflareZone = { id: string; name: string };
+// dns/routing/capable are populated by the credential probe (cloudflare/test); absent = unknown
+export type CloudflareZone = {
+	id: string;
+	name: string;
+	dns?: boolean;
+	routing?: boolean;
+	capable?: boolean;
+};
 export type CloudflareWorker = { name: string };
 
 export type CloudflareStatus = {
