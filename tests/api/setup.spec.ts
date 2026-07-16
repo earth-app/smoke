@@ -208,4 +208,28 @@ describe('POST /api/setup/init', () => {
 		expect(all.supportEmail).toBe('help@corp.com');
 		expect((all.email as { support_email?: string }).support_email).toBe('help@corp.com');
 	});
+
+	it('persists an in-range pbkdf2 iteration count from the wizard', async () => {
+		const runtime = getRuntime();
+		const handler = await importRoute('~/server/api/setup/init.post');
+
+		mockBody({ ...goodBody, settings: { security: { pbkdf2_iterations: 30000 } } });
+		await handler(eventFor(runtime.env));
+
+		const utils = await import('#server-utils');
+		const security = await utils.getSecuritySettings();
+		expect(security.pbkdf2_iterations).toBe(30000);
+	});
+
+	it('clamps an out-of-range pbkdf2 iteration count to the workers max', async () => {
+		const runtime = getRuntime();
+		const handler = await importRoute('~/server/api/setup/init.post');
+
+		mockBody({ ...goodBody, settings: { security: { pbkdf2_iterations: 250000 } } });
+		await handler(eventFor(runtime.env));
+
+		const utils = await import('#server-utils');
+		const security = await utils.getSecuritySettings();
+		expect(security.pbkdf2_iterations).toBe(100000);
+	});
 });
