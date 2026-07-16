@@ -488,3 +488,46 @@ describe('inbound participant capture', () => {
 		expect(participants.some((p: string) => p.includes('+t'))).toBe(false);
 	});
 });
+
+describe('automated / bounce inbound', () => {
+	// regression: a cloudflare bounce (support address does not exist) hit the hook, which tried to
+	// reply to the bounce address and 550'd. bounces must be dropped: no ticket, no reply
+	it('ignores a cloudflare bounce: no ticket and no reply', async () => {
+		const runtime = getRuntime();
+		const handler = await loadEmailHandler();
+
+		const message = buildMessage({
+			from: 'bounces@cf-bounce.notify.cloudflare.com',
+			subject: 'Delivery failure',
+			messageId: '<bounce1@cf>',
+			body: 'permanent error (550): 5.1.1 Address does not exist'
+		});
+		await handler({ message, env: runtime.env, context: {} });
+
+		const utils = await import('#server-utils');
+		const tickets = await utils.listTickets(runtime.env, '', 1, 10, 0, 'id', 'asc', PRIV_VIEWER);
+		expect(tickets).toHaveLength(0);
+		expect(message.reply).not.toHaveBeenCalled();
+	});
+
+	it('detects bounce/daemon/no-reply addresses and automation headers', async () => {
+		const { isAutomatedInbound, isAutomatedSenderAddress } = await import('~/server/utils/email');
+
+		expect(isAutomatedSenderAddress('bounces@cf-bounce.notify.cloudflare.com')).toBe(true);
+		expect(isAutomatedSenderAddress('MAILER-DAEMON@mail.example.com')).toBe(true);
+		expect(isAutomatedSenderAddress('no-reply@shop.example.com')).toBe(true);
+		// empty/unparseable is NOT classified here (the cloudflare hook setReject's it instead)
+		expect(isAutomatedSenderAddress('')).toBe(false);
+		expect(isAutomatedSenderAddress('alice@example.com')).toBe(false);
+
+		const autoReplied = new Headers();
+		autoReplied.set('auto-submitted', 'auto-replied');
+		expect(isAutomatedInbound({ from: 'alice@example.com', headers: autoReplied })).toBe(true);
+
+		const bulk = new Headers();
+		bulk.set('precedence', 'bulk');
+		expect(isAutomatedInbound({ from: 'alice@example.com', headers: bulk })).toBe(true);
+
+		expect(isAutomatedInbound({ from: 'alice@example.com', headers: new Headers() })).toBe(false);
+	});
+});

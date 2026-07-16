@@ -1,5 +1,10 @@
-import { beforeAll, describe, expect, it } from 'vitest';
-import { cloudflareCapabilities } from '~/server/utils/cloudflare';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+import {
+	cloudflareCapabilities,
+	probeCloudflareCapabilities,
+	probeZoneCapabilities,
+	setMockCf
+} from '~/server/utils/cloudflare';
 import { emailConfigStatus } from '~/server/utils/email';
 import { Role } from '~/shared/types/user';
 import { eventFor, getRuntime, importRoute, mockBody, seedAgent, seedUser } from './route-runtime';
@@ -242,6 +247,86 @@ describe('cloudflareCapabilities', () => {
 	});
 });
 
+const okBody = JSON.stringify({ success: true, result: [] });
+const forbiddenBody = JSON.stringify({ success: false, errors: [{ message: 'forbidden' }] });
+
+describe('probeZoneCapabilities', () => {
+	// regression: zone-scoped perms (dns / email routing) often live on a single zone (the mail
+	// domain), so per-zone probing must report EACH zone, not a single account-level answer
+	it('reports per-zone dns + routing access', async () => {
+		setMockCf(false);
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (input: unknown) => {
+				const url = String(input);
+				// only the second zone carries the dns + email-routing perms
+				if (url.includes('/zones/zone-b/')) return new Response(okBody, { status: 200 });
+				return new Response(forbiddenBody, { status: 403 });
+			})
+		);
+		try {
+			const map = await probeZoneCapabilities('tok', ['zone-a', 'zone-b']);
+			expect(map['zone-a']).toEqual({ dns: false, routing: false });
+			expect(map['zone-b']).toEqual({ dns: true, routing: true });
+		} finally {
+			vi.unstubAllGlobals();
+			setMockCf(false);
+		}
+	});
+});
+
+describe('probeCloudflareCapabilities', () => {
+	it('grants a zone capability when ANY zone in the map has it', async () => {
+		setMockCf(false);
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (input: unknown) => {
+				const url = String(input);
+				if (url.includes('/accounts/')) return new Response(okBody, { status: 200 });
+				return new Response(forbiddenBody, { status: 403 });
+			})
+		);
+		try {
+			const caps = await probeCloudflareCapabilities('tok', 'acct-1', {
+				'zone-a': { dns: false, routing: false },
+				'zone-b': { dns: true, routing: true }
+			});
+			const byKey = Object.fromEntries(caps.map((c) => [c.key, c.granted]));
+			expect(byKey.dns).toBe(true);
+			expect(byKey.routing).toBe(true);
+			expect(byKey.workers).toBe(true);
+			expect(byKey.ai).toBe(true);
+			expect(byKey.send).toBe(true);
+		} finally {
+			vi.unstubAllGlobals();
+			setMockCf(false);
+		}
+	});
+
+	it('blocks zone capabilities when no zone in the map has them', async () => {
+		setMockCf(false);
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (input: unknown) => {
+				const url = String(input);
+				if (url.includes('/accounts/')) return new Response(okBody, { status: 200 });
+				return new Response(forbiddenBody, { status: 403 });
+			})
+		);
+		try {
+			const caps = await probeCloudflareCapabilities('tok', 'acct-1', {
+				'zone-a': { dns: false, routing: false }
+			});
+			const byKey = Object.fromEntries(caps.map((c) => [c.key, c.granted]));
+			expect(byKey.dns).toBe(false);
+			expect(byKey.routing).toBe(false);
+		} finally {
+			vi.unstubAllGlobals();
+			setMockCf(false);
+		}
+	});
+});
+
 describe('POST /api/cloudflare/test', () => {
 	it('reports capabilities for a valid token', async () => {
 		const admin = await seedAdmin();
@@ -251,7 +336,9 @@ describe('POST /api/cloudflare/test', () => {
 		expect(result.valid).toBe(true);
 		expect(result.capabilities.length).toBeGreaterThan(0);
 		expect(result.capabilities.every((c: any) => c.granted)).toBe(true);
-		expect(result.zones).toEqual([{ id: 'zone-mock', name: 'example.com' }]);
+		expect(result.zones).toEqual([
+			{ id: 'zone-mock', name: 'example.com', dns: true, routing: true, capable: true }
+		]);
 	});
 
 	it('reports invalid for a bad token', async () => {
