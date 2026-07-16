@@ -11,7 +11,7 @@ export default defineNitroPlugin((nitroApp) => {
 		const env = { ...base, DB: base.DB ?? hubDb };
 
 		pending = ensureSchema(env).catch((error) => {
-			console.warn('db schema ensure failed', error);
+			console.error('[db-schema] ensureSchema failed on first request', error);
 		});
 		return pending;
 	});
