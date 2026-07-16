@@ -269,6 +269,12 @@ export async function logIn(
 		});
 	}
 
+	if (user.password_algorithm && user.password_algorithm !== 'bcrypt') {
+		await upgradePasswordHash(user.id, password).catch((error) =>
+			console.warn('password rehash-on-login failed', error)
+		);
+	}
+
 	const sessionToken = await createSessionToken(user.id);
 	const decryptedUser = await decryptUser(user, env.MASTER_KEY);
 
