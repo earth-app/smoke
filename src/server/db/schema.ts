@@ -279,6 +279,14 @@ export async function ensureSchema(env: any): Promise<void> {
 		}
 		if (!client?.run) continue;
 
+		for (const pragma of ['PRAGMA busy_timeout = 5000', 'PRAGMA journal_mode = WAL']) {
+			try {
+				await client.run(sql.raw(pragma));
+			} catch {
+				// non-sqlite driver (e.g. d1) or unsupported; harmless
+			}
+		}
+
 		for (const statement of SCHEMA_DDL) {
 			try {
 				await client.run(sql.raw(statement));
