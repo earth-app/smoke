@@ -220,6 +220,15 @@ export async function setUserPassword(
 	});
 }
 
+export async function upgradePasswordHash(userId: string, verifiedPassword: string): Promise<void> {
+	const { password_hash, password_salt, password_algorithm } = await hashPassword(verifiedPassword);
+	await run(
+		userId,
+		`UPDATE users SET password_hash = ?, password_salt = ?, password_algorithm = ? WHERE id = ?`,
+		[password_hash, password_salt, password_algorithm, userId]
+	);
+}
+
 export async function patchUser(
 	user: User,
 	updates: Partial<Omit<User, 'id' | 'created_at' | 'updated_at'>>,
