@@ -57,4 +57,41 @@ describe('POST /api/users/login', () => {
 		const result = (await handler(eventFor(runtime.env))) as { success: boolean };
 		expect(result.success).toBe(true);
 	});
+
+	it('hashes new passwords with bcrypt by default', async () => {
+		const utils = await import('#server-utils');
+		const { password_algorithm } = await utils.hashPassword('StrongPass123!');
+		expect(password_algorithm).toBe('bcrypt');
+	});
+
+	it('rehashes a legacy non-bcrypt hash to bcrypt on login', async () => {
+		const runtime = getRuntime();
+		const utils = await import('#server-utils');
+		const created = await utils.createUser(
+			'legacy_user',
+			'legacy@example.com',
+			undefined as never,
+			runtime.env
+		);
+
+		// plant a legacy scrypt hash directly (setInitialPassword now writes bcrypt)
+		const legacy = await utils.hashPassword('StrongPass123!', 'scrypt');
+		await runtime.db
+			.prepare(
+				`UPDATE users SET password_hash = ?, password_salt = ?, password_algorithm = ? WHERE id = ?`
+			)
+			.bind(legacy.password_hash, legacy.password_salt, legacy.password_algorithm, created.id)
+			.run();
+
+		const handler = await importRoute('~/server/api/users/login.post');
+		mockBody({ usernameOrEmail: 'legacy_user', password: 'StrongPass123!' });
+		const result = (await handler(eventFor(runtime.env))) as { success: boolean };
+		expect(result.success).toBe(true);
+
+		const row = await runtime.db
+			.prepare(`SELECT password_algorithm FROM users WHERE id = ?`)
+			.bind(created.id)
+			.all<{ password_algorithm: string }>();
+		expect(row.results?.[0]?.password_algorithm).toBe('bcrypt');
+	});
 });
