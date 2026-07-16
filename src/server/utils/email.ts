@@ -202,6 +202,37 @@ function htmlToText(html: string): string {
 		.trim();
 }
 
+// a sender address that must never open a ticket or get an auto-reply: a bounce, a daemon, or a
+// no-reply mailbox. an empty/unparseable sender is NOT classified here -- the caller handles that
+// separately (setReject on the cloudflare hook)
+export function isAutomatedSenderAddress(from: string): boolean {
+	const f = String(from ?? '')
+		.trim()
+		.toLowerCase();
+	if (!f || f === '<>') return false;
+	if (/(^|[<@.])(mailer-daemon|postmaster|bounce[sd]?|no-?reply|do-?not-?reply)([.@]|$)/.test(f)) {
+		return true;
+	}
+	return /cf-bounce|\.notify\.cloudflare\.com$/.test(f);
+}
+
+// bounces, mailer-daemon, auto-replies (vacation/ooo), and bulk mail must never open a ticket or
+// get an auto-reply: replying to a bounce address 550s and an auto-reply loop would spam a thread.
+// detect via the envelope sender + the standard automation headers (message is loose-typed per env)
+export function isAutomatedInbound(message: any): boolean {
+	if (isAutomatedSenderAddress(String(message?.from ?? ''))) return true;
+
+	const headers = message?.headers;
+	const get = (name: string): string =>
+		typeof headers?.get === 'function' ? String(headers.get(name) ?? '').toLowerCase() : '';
+	// rfc 3834: any auto-submitted value other than "no" means the message was auto-generated
+	const autoSubmitted = get('auto-submitted');
+	if (autoSubmitted && autoSubmitted !== 'no') return true;
+	if (/bulk|list|junk|auto_reply/.test(get('precedence'))) return true;
+	if (get('x-auto-response-suppress') || get('x-autoreply') || get('x-autorespond')) return true;
+	return false;
+}
+
 // message is the cloudflare ForwardableEmailMessage; typed loose per the env: any convention
 export async function parseInboundEmail(message: any): Promise<ParsedInboundEmail | null> {
 	const buffer = await new Response(message.raw as BodyInit).arrayBuffer();

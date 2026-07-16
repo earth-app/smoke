@@ -81,6 +81,15 @@ async function handleRawMessage(
 	});
 	if (!parsed?.from) return false;
 
+	// drop bounces / daemon / auto-reply mail (the constructed message.from is empty, so check the
+	// parsed sender + the raw auto-submitted header rather than isAutomatedInbound)
+	if (isAutomatedSenderAddress(parsed.from)) return false;
+	const autoSubmitted = head
+		.match(/^auto-submitted:[ \t]*(.*)$/im)?.[1]
+		?.trim()
+		.toLowerCase();
+	if (autoSubmitted && autoSubmitted !== 'no') return false;
+
 	// dedup: skip a message-id we already indexed
 	if (parsed.messageId) {
 		const existing = await resolveTicketForInbound({

@@ -71,6 +71,25 @@
 					</div>
 				</div>
 			</div>
+
+			<div
+				v-if="result.zones?.length"
+				class="text-xs"
+			>
+				<p class="font-medium text-slate-600 dark:text-slate-300">Zones Ready for Inbound</p>
+				<p
+					v-if="capableZones.length"
+					class="text-slate-500"
+				>
+					{{ capableZones.map((z) => z.name).join(', ') }}
+				</p>
+				<p
+					v-else
+					class="text-amber-600 dark:text-amber-500"
+				>
+					None - grant DNS and Email Routing (Edit) on the zone that hosts your support domain.
+				</p>
+			</div>
 		</template>
 
 		<UAlert
@@ -112,11 +131,14 @@ type Result = {
 	scopes: string[];
 	capabilities: Cap[];
 	account_ok?: boolean | null;
-	zones?: { id: string; name: string }[];
+	zones?: { id: string; name: string; dns?: boolean; routing?: boolean; capable?: boolean }[];
 };
 
 const result = ref<Result | null>(null);
 const testing = ref(false);
+
+// zones the token can actually provision (DNS + Email Routing edit), from the per-zone probe
+const capableZones = computed(() => (result.value?.zones ?? []).filter((z) => z.capable));
 
 const permissionHints = [
 	'Account > Email Sending > Edit (send outbound email)',

@@ -214,36 +214,71 @@ function capabilityMatrix(granted: Record<string, boolean>): CfCapability[] {
 	}));
 }
 
+// per-zone probe of the zone-scoped perms inbound provisioning needs (dns edit + email routing).
+// zone-scoped perms are usually granted on a SPECIFIC zone (the mail domain), not account-wide, so
+// this reports EACH zone rather than a single account-level answer
+export type ZoneCapability = { dns: boolean; routing: boolean };
+
+async function cfOk(token: string, path: string): Promise<boolean> {
+	try {
+		await cfFetch(token, path, { method: 'GET' });
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+export async function probeZoneCapabilities(
+	token: string,
+	zoneIds: string[]
+): Promise<Record<string, ZoneCapability>> {
+	if (MOCK) {
+		return Object.fromEntries(zoneIds.map((z) => [z, { dns: true, routing: true }]));
+	}
+	const entries = await Promise.all(
+		zoneIds.map(async (z) => {
+			const [dns, routing] = await Promise.all([
+				cfOk(token, `/zones/${z}/dns_records?per_page=1`),
+				cfOk(token, `/zones/${z}/email/routing/rules?per_page=1`)
+			]);
+			return [z, { dns, routing }] as const;
+		})
+	);
+	return Object.fromEntries(entries);
+}
+
 export async function probeCloudflareCapabilities(
 	token: string,
 	accountId: string,
-	zoneId?: string
+	zoneCaps: Record<string, ZoneCapability> = {}
 ): Promise<CfCapability[]> {
 	if (MOCK) {
 		return capabilityMatrix({ send: true, routing: true, dns: true, workers: true, ai: true });
 	}
 
-	const ok = async (path: string): Promise<boolean> => {
-		try {
-			await cfFetch(token, path, { method: 'GET' });
-			return true;
-		} catch {
-			return false;
-		}
-	};
-
-	const [workers, ai, addresses, dns, routing] = await Promise.all([
-		accountId ? ok(`/accounts/${accountId}/workers/scripts?per_page=1`) : Promise.resolve(false),
-		accountId ? ok(`/accounts/${accountId}/ai/models/search?per_page=1`) : Promise.resolve(false),
+	const [workers, ai, addresses] = await Promise.all([
 		accountId
-			? ok(`/accounts/${accountId}/email/routing/addresses?per_page=1`)
+			? cfOk(token, `/accounts/${accountId}/workers/scripts?per_page=1`)
 			: Promise.resolve(false),
-		zoneId ? ok(`/zones/${zoneId}/dns_records?per_page=1`) : Promise.resolve(false),
-		zoneId ? ok(`/zones/${zoneId}/email/routing/rules?per_page=1`) : Promise.resolve(false)
+		accountId
+			? cfOk(token, `/accounts/${accountId}/ai/models/search?per_page=1`)
+			: Promise.resolve(false),
+		accountId
+			? cfOk(token, `/accounts/${accountId}/email/routing/addresses?per_page=1`)
+			: Promise.resolve(false)
 	]);
 
+	// a zone-scoped capability is granted if the token can do it on ANY zone (provisioning targets
+	// whichever zone the user picks)
+	const caps = Object.values(zoneCaps);
+	const dns = caps.some((c) => c.dns);
+	const routing = caps.some((c) => c.routing);
+
 	return capabilityMatrix({
+		// no rest endpoint verifies "Email Sending"; the account email-routing-address read is the
+		// closest positive signal -- a heuristic, verified for real by the test-email flow
 		send: addresses,
+		// inbound needs the zone catch-all rule AND the account destination address
 		routing: routing && addresses,
 		dns,
 		workers,

@@ -66,14 +66,26 @@ export default defineEventHandler(async (event) => {
 			}
 		}
 
+		// probe each zone once (verify never returns the token's permission set); reuse the map for
+		// both the capability matrix and the per-zone flags so the ui can show which zones are ready
+		const zoneCaps = await probeZoneCapabilities(
+			token,
+			zones.map((z) => z.id)
+		);
+		const capabilities = await probeCloudflareCapabilities(token, accountId, zoneCaps);
+		const zonesAnnotated = zones.map((z) => {
+			const cap = zoneCaps[z.id] ?? { dns: false, routing: false };
+			return { ...z, dns: cap.dns, routing: cap.routing, capable: cap.dns && cap.routing };
+		});
+
 		return {
 			valid: true,
 			status: verified.status ?? 'active',
 			scopes,
-			capabilities: await probeCloudflareCapabilities(token, accountId, zones[0]?.id),
+			capabilities,
 			account_id: accountId,
 			account_ok: accountOk,
-			zones
+			zones: zonesAnnotated
 		};
 	} catch (error) {
 		return {

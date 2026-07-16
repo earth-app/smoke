@@ -2,6 +2,13 @@ export default defineNitroPlugin((nitro) => {
 	nitro.hooks.hook('cloudflare:email', async ({ message, env, context }) => {
 		void context;
 
+		// drop bounces / daemon / auto-reply / bulk mail entirely: never reply (a bounce address 550s)
+		// and never open a ticket for automated senders
+		if (isAutomatedInbound(message)) {
+			console.info('[email] ignoring automated/bounce inbound', { from: message?.from });
+			return;
+		}
+
 		// degrade calmly when the email engine isn't fully configured
 		if (!(await isEmailConfigured(env))) {
 			await replyNotConfigured(message).catch((error) =>
@@ -26,6 +33,10 @@ export default defineNitroPlugin((nitro) => {
 			}
 			return;
 		}
+
+		// a bounce can carry an empty envelope but a real daemon From header (mailer-daemon@...);
+		// drop it after parsing so it never opens a ticket or triggers a reply
+		if (isAutomatedSenderAddress(parsed.from)) return;
 
 		// existing ticket + a linked agent sender -> an agent reply from their own mailbox
 		const existingTicketId = await resolveTicketForInbound(parsed);

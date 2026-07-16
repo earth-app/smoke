@@ -152,10 +152,22 @@ function stepLabel(name: string): string {
 }
 
 const zoneOptions = computed(() => {
-	const map = new Map<string, string>();
-	for (const z of statusZones.value ?? []) map.set(z.id, z.name);
-	for (const z of testZones.value) map.set(z.id, z.name);
-	return [...map.entries()].map(([value, name]) => ({ label: `${name} (${value})`, value }));
+	const byId = new Map<string, CloudflareZone>();
+	for (const z of statusZones.value ?? []) byId.set(z.id, z);
+	for (const z of testZones.value) byId.set(z.id, z); // test result carries the capability flags
+	const items = [...byId.values()].map((z) => {
+		// capability is only known after a credential test; leave unknown zones selectable
+		const known = z.dns !== undefined || z.routing !== undefined;
+		const capable = !!(z.dns && z.routing);
+		return {
+			label:
+				known && !capable ? `${z.name} (${z.id}) - no DNS/email access` : `${z.name} (${z.id})`,
+			value: z.id,
+			disabled: known && !capable
+		};
+	});
+	// provision-ready zones first; the token can't provision the disabled ones
+	return items.sort((a, b) => Number(a.disabled) - Number(b.disabled));
 });
 
 const workerOptions = computed(() => {
@@ -177,9 +189,9 @@ watch(
 	[statusZones, testZones, () => cfStatus.value?.zone_id],
 	() => {
 		if (selectedZoneId.value) return;
-		selectedZoneId.value =
-			cfStatus.value?.zone_id ||
-			(zoneOptions.value.length === 1 ? zoneOptions.value[0]!.value : '');
+		// prefer a provision-ready zone; only auto-pick when exactly one is usable
+		const usable = zoneOptions.value.filter((o) => !o.disabled);
+		selectedZoneId.value = cfStatus.value?.zone_id || (usable.length === 1 ? usable[0]!.value : '');
 	},
 	{ immediate: true }
 );
