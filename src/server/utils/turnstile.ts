@@ -13,14 +13,26 @@ function turnstileSecretKey(event: H3Event): string | undefined {
 	}
 }
 
-// turnstile is auto-applied only when both keys are present; unconfigured is a no-op
-export function isTurnstileConfigured(event: H3Event): boolean {
+// which turnstile keys are present (public-safe booleans; never the secret value). a half-configured
+// state (one key) leaves protection OFF and is worth surfacing distinctly in the ui
+export function turnstileKeyStatus(event: H3Event): {
+	hasSiteKey: boolean;
+	hasSecretKey: boolean;
+	configured: boolean;
+} {
 	try {
 		const config = useRuntimeConfig(event);
-		return !!config?.turnstile?.secretKey && !!config?.public?.turnstile?.siteKey;
+		const hasSecretKey = !!config?.turnstile?.secretKey;
+		const hasSiteKey = !!config?.public?.turnstile?.siteKey;
+		return { hasSiteKey, hasSecretKey, configured: hasSiteKey && hasSecretKey };
 	} catch {
-		return false;
+		return { hasSiteKey: false, hasSecretKey: false, configured: false };
 	}
+}
+
+// turnstile is auto-applied only when both keys are present; unconfigured is a no-op
+export function isTurnstileConfigured(event: H3Event): boolean {
+	return turnstileKeyStatus(event).configured;
 }
 
 // verify a turnstile token when configured; fail closed on a missing token or a verify outage
