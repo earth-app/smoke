@@ -141,32 +141,34 @@ export async function getTokenScopes(token: string): Promise<string[]> {
 	}
 }
 
+// permission strings match Cloudflare's actual token permission-group names (Account/Zone > Group >
+// level). keywords are only used by the fallback keyword matcher; live detection probes the api
 export const CF_CAPABILITIES = [
 	{
 		key: 'send',
 		label: 'Send Outbound Email',
-		permission: 'Email Sending: Send',
+		permission: 'Account > Email Sending > Edit',
 		keywords: ['email', 'send'],
 		description: 'Send agent replies and auto-acknowledgements via Cloudflare Email Service.'
 	},
 	{
 		key: 'routing',
 		label: 'Inbound Email Routing',
-		permission: 'Email Routing Addresses: Edit',
+		permission: 'Zone > Email Routing > Edit + Account > Email Routing Addresses > Edit',
 		keywords: ['email', 'routing'],
 		description: 'Turn inbound customer emails into tickets via a catch-all rule.'
 	},
 	{
 		key: 'dns',
 		label: 'Auto-Configure DNS',
-		permission: 'DNS: Edit',
+		permission: 'Zone > DNS > Edit',
 		keywords: ['dns'],
 		description: 'Create the MX / SPF / DKIM records for your domain automatically.'
 	},
 	{
 		key: 'workers',
 		label: 'Deploy Email Worker',
-		permission: 'Workers Scripts: Edit',
+		permission: 'Account > Workers Scripts > Edit',
 		keywords: ['workers', 'worker'],
 		description: 'Provision the worker that receives mail and threads it into tickets.'
 	},
@@ -174,7 +176,7 @@ export const CF_CAPABILITIES = [
 		key: 'ai',
 		// keyword avoids matching 'email' (which contains 'ai'); real scopes are opaque policy ids
 		label: 'AI-Powered Replies',
-		permission: 'Workers AI: Read',
+		permission: 'Account > Workers AI > Read',
 		keywords: ['workers ai', 'workersai'],
 		description: 'Draft support replies with Cloudflare AI models.'
 	}
@@ -188,7 +190,9 @@ export type CfCapability = {
 	granted: boolean;
 };
 
-// map best-effort token scopes to a per-feature granted/blocked matrix
+// map best-effort token scopes to a per-feature granted/blocked matrix. NOTE: /user/tokens/verify
+// returns only { status } (never the granted permission groups), so this keyword matcher gets [] in
+// practice and reports everything blocked -- use probeCloudflareCapabilities for real detection
 export function cloudflareCapabilities(scopes: string[]): CfCapability[] {
 	const lower = scopes.map((s) => s.toLowerCase());
 	return CF_CAPABILITIES.map((c) => ({
@@ -198,6 +202,53 @@ export function cloudflareCapabilities(scopes: string[]): CfCapability[] {
 		description: c.description,
 		granted: c.keywords.some((k) => lower.some((s) => s.includes(k)))
 	}));
+}
+
+function capabilityMatrix(granted: Record<string, boolean>): CfCapability[] {
+	return CF_CAPABILITIES.map((c) => ({
+		key: c.key,
+		label: c.label,
+		permission: c.permission,
+		description: c.description,
+		granted: granted[c.key] ?? false
+	}));
+}
+
+export async function probeCloudflareCapabilities(
+	token: string,
+	accountId: string,
+	zoneId?: string
+): Promise<CfCapability[]> {
+	if (MOCK) {
+		return capabilityMatrix({ send: true, routing: true, dns: true, workers: true, ai: true });
+	}
+
+	const ok = async (path: string): Promise<boolean> => {
+		try {
+			await cfFetch(token, path, { method: 'GET' });
+			return true;
+		} catch {
+			return false;
+		}
+	};
+
+	const [workers, ai, addresses, dns, routing] = await Promise.all([
+		accountId ? ok(`/accounts/${accountId}/workers/scripts?per_page=1`) : Promise.resolve(false),
+		accountId ? ok(`/accounts/${accountId}/ai/models/search?per_page=1`) : Promise.resolve(false),
+		accountId
+			? ok(`/accounts/${accountId}/email/routing/addresses?per_page=1`)
+			: Promise.resolve(false),
+		zoneId ? ok(`/zones/${zoneId}/dns_records?per_page=1`) : Promise.resolve(false),
+		zoneId ? ok(`/zones/${zoneId}/email/routing/rules?per_page=1`) : Promise.resolve(false)
+	]);
+
+	return capabilityMatrix({
+		send: addresses,
+		routing: routing && addresses,
+		dns,
+		workers,
+		ai
+	});
 }
 
 export async function listZones(token: string, accountId: string): Promise<CfZone[]> {

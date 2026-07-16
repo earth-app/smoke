@@ -70,7 +70,7 @@ export default defineEventHandler(async (event) => {
 			valid: true,
 			status: verified.status ?? 'active',
 			scopes,
-			capabilities: cloudflareCapabilities(scopes),
+			capabilities: await probeCloudflareCapabilities(token, accountId, zones[0]?.id),
 			account_id: accountId,
 			account_ok: accountOk,
 			zones
