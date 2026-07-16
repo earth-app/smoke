@@ -5,6 +5,8 @@ export function useSettings() {
 	const settingsStore = useSettingsStore();
 
 	const settings = computed(() => settingsStore.settings);
+	// undefined = still loading (show a skeleton), null = load failed, object = loaded
+	const loaded = computed(() => settingsStore.loaded);
 
 	const fetchSettings = async (force: boolean = false) => {
 		return await settingsStore.fetch(force);
@@ -27,6 +29,7 @@ export function useSettings() {
 
 	return {
 		settings,
+		loaded,
 		fetchSettings,
 		save,
 		saveEmail,

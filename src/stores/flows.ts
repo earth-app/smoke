@@ -12,6 +12,8 @@ export type FlowInput = {
 };
 
 export const useFlowsStore = defineStore('flows', () => {
+	// request-scoped so internal api reads route in-process during ssr (avoids the self-loopback stall)
+	const requestFetch = useRequestFetch();
 	const authStore = useAuthStore();
 
 	const flows = ref<TicketFlow[]>([]);
@@ -25,7 +27,7 @@ export const useFlowsStore = defineStore('flows', () => {
 
 		fetchPromise.value = (async () => {
 			try {
-				const result = await $fetch<TicketFlow[]>(`/api/flows`, {
+				const result = await requestFetch<TicketFlow[]>(`/api/flows`, {
 					cache: 'no-store',
 					credentials: 'include',
 					headers: authHeaders()
@@ -45,7 +47,7 @@ export const useFlowsStore = defineStore('flows', () => {
 
 	const create = async (body: FlowInput): Promise<TicketFlow> => {
 		try {
-			const flow = await $fetch<TicketFlow>(`/api/flows`, {
+			const flow = await requestFetch<TicketFlow>(`/api/flows`, {
 				method: 'POST',
 				body,
 				credentials: 'include',
@@ -61,7 +63,7 @@ export const useFlowsStore = defineStore('flows', () => {
 
 	const update = async (id: number, body: Partial<FlowInput>): Promise<TicketFlow> => {
 		try {
-			const flow = await $fetch<TicketFlow>(`/api/flows/${id}`, {
+			const flow = await requestFetch<TicketFlow>(`/api/flows/${id}`, {
 				method: 'PATCH',
 				body,
 				credentials: 'include',
@@ -77,7 +79,7 @@ export const useFlowsStore = defineStore('flows', () => {
 
 	const remove = async (id: number): Promise<void> => {
 		try {
-			await $fetch(`/api/flows/${id}`, {
+			await requestFetch(`/api/flows/${id}`, {
 				method: 'DELETE',
 				credentials: 'include',
 				headers: authHeaders()

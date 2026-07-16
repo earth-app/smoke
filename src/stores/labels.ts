@@ -3,6 +3,8 @@ import type { Label } from '~/shared/types/user';
 import { useAuthStore } from '~/stores/auth';
 
 export const useLabelsStore = defineStore('labels', () => {
+	// request-scoped so internal api reads route in-process during ssr (avoids the self-loopback stall)
+	const requestFetch = useRequestFetch();
 	const authStore = useAuthStore();
 
 	const cache = reactive(new Map<number, Label>());
@@ -26,7 +28,7 @@ export const useLabelsStore = defineStore('labels', () => {
 
 		const promise = (async () => {
 			try {
-				const labels = await $fetch<Label[]>(`/api/labels?${key}`, {
+				const labels = await requestFetch<Label[]>(`/api/labels?${key}`, {
 					cache: 'no-store',
 					credentials: 'include',
 					headers: authHeaders()
@@ -53,7 +55,7 @@ export const useLabelsStore = defineStore('labels', () => {
 
 		const promise = (async () => {
 			try {
-				const label = await $fetch<Label>(`/api/labels/${id}`, {
+				const label = await requestFetch<Label>(`/api/labels/${id}`, {
 					cache: 'no-store',
 					credentials: 'include',
 					headers: authHeaders()
@@ -74,7 +76,7 @@ export const useLabelsStore = defineStore('labels', () => {
 
 	const createLabel = async (body: Partial<Label>): Promise<Label> => {
 		try {
-			const label = await $fetch<Label>(`/api/labels`, {
+			const label = await requestFetch<Label>(`/api/labels`, {
 				method: 'POST',
 				body,
 				credentials: 'include',
@@ -90,7 +92,7 @@ export const useLabelsStore = defineStore('labels', () => {
 
 	const patchLabel = async (id: number, body: Partial<Label>): Promise<Label> => {
 		try {
-			const label = await $fetch<Label>(`/api/labels/${id}`, {
+			const label = await requestFetch<Label>(`/api/labels/${id}`, {
 				method: 'PATCH',
 				body,
 				credentials: 'include',
@@ -106,7 +108,7 @@ export const useLabelsStore = defineStore('labels', () => {
 
 	const deleteLabel = async (id: number): Promise<void> => {
 		try {
-			await $fetch(`/api/labels/${id}`, {
+			await requestFetch(`/api/labels/${id}`, {
 				method: 'DELETE',
 				credentials: 'include',
 				headers: authHeaders()

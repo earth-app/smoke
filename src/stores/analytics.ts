@@ -6,6 +6,8 @@ export type AnalyticsRange = '7d' | '30d' | '90d' | 'all';
 export type AnalyticsSummary = Record<string, any>;
 
 export const useAnalyticsStore = defineStore('analytics', () => {
+	// request-scoped so internal api reads route in-process during ssr (avoids the self-loopback stall)
+	const requestFetch = useRequestFetch();
 	const authStore = useAuthStore();
 
 	const cache = reactive(new Map<AnalyticsRange, AnalyticsSummary>());
@@ -24,11 +26,14 @@ export const useAnalyticsStore = defineStore('analytics', () => {
 
 		const promise = (async () => {
 			try {
-				const result = await $fetch<AnalyticsSummary>(`/api/analytics/summary?range=${range}`, {
-					cache: 'no-store',
-					credentials: 'include',
-					headers: authHeaders()
-				});
+				const result = await requestFetch<AnalyticsSummary>(
+					`/api/analytics/summary?range=${range}`,
+					{
+						cache: 'no-store',
+						credentials: 'include',
+						headers: authHeaders()
+					}
+				);
 				cache.set(range, result);
 				return result;
 			} catch (error) {

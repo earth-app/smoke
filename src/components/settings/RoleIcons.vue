@@ -9,7 +9,17 @@
 			</p>
 		</div>
 
-		<div class="flex flex-col gap-4">
+		<Skeleton
+			v-if="!loaded"
+			variant="line"
+			:repeat="3"
+			:gap="4"
+			height="2.25rem"
+		/>
+		<div
+			v-else
+			class="flex flex-col gap-4"
+		>
 			<UFormField
 				v-for="row in roles"
 				:key="row.key"
@@ -44,7 +54,7 @@
 
 <script setup lang="ts">
 const toast = useToast();
-const { settings, save } = useSettings();
+const { settings, loaded, save } = useSettings();
 
 type RoleKey = 'agent' | 'manager' | 'admin';
 

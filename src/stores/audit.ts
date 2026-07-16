@@ -26,6 +26,8 @@ export type AuditListResponse = {
 export type AuditExportFormat = 'csv' | 'json' | 'txt';
 
 export const useAuditStore = defineStore('audit', () => {
+	// request-scoped so internal api reads route in-process during ssr (avoids the self-loopback stall)
+	const requestFetch = useRequestFetch();
 	const authStore = useAuthStore();
 
 	const inFlight = reactive(new Map<string, Promise<AuditListResponse | null>>());
@@ -39,7 +41,7 @@ export const useAuditStore = defineStore('audit', () => {
 
 		const promise = (async () => {
 			try {
-				return await $fetch<AuditListResponse>(`/api/audit?${key}`, {
+				return await requestFetch<AuditListResponse>(`/api/audit?${key}`, {
 					cache: 'no-store',
 					credentials: 'include',
 					headers: authHeaders()
@@ -60,7 +62,7 @@ export const useAuditStore = defineStore('audit', () => {
 	const download = async (q: AuditQuery, format: AuditExportFormat): Promise<void> => {
 		const params = buildAuditParams(q);
 		params.append('format', format);
-		const blob = await $fetch<Blob>(`/api/audit/export?${params.toString()}`, {
+		const blob = await requestFetch<Blob>(`/api/audit/export?${params.toString()}`, {
 			responseType: 'blob',
 			credentials: 'include',
 			headers: authHeaders()

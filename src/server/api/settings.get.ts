@@ -1,5 +1,5 @@
 export default defineEventHandler(async (event) => {
 	const settings = await getAllSettings();
-	// public-safe boolean only; never the secret
-	return { ...settings, turnstile: { configured: isTurnstileConfigured(event) } };
+	// public-safe booleans only; never the secret value
+	return { ...settings, turnstile: turnstileKeyStatus(event) };
 });

@@ -18,6 +18,8 @@ type PostMessageBody = {
 };
 
 export const useTicketStore = defineStore('ticket', () => {
+	// request-scoped so internal api reads route in-process during ssr (avoids the self-loopback stall)
+	const requestFetch = useRequestFetch();
 	const authStore = useAuthStore();
 
 	const cache = reactive(new Map<number, Ticket>());
@@ -44,7 +46,7 @@ export const useTicketStore = defineStore('ticket', () => {
 
 		const promise = (async () => {
 			try {
-				const tickets = await $fetch<Ticket[]>(`/api/tickets?${key}`, {
+				const tickets = await requestFetch<Ticket[]>(`/api/tickets?${key}`, {
 					cache: 'no-store',
 					credentials: 'include',
 					headers: authHeaders()
@@ -71,7 +73,7 @@ export const useTicketStore = defineStore('ticket', () => {
 
 		const promise = (async () => {
 			try {
-				const ticket = await $fetch<Ticket>(`/api/tickets/${id}`, {
+				const ticket = await requestFetch<Ticket>(`/api/tickets/${id}`, {
 					cache: 'no-store',
 					credentials: 'include',
 					headers: authHeaders()
@@ -100,18 +102,18 @@ export const useTicketStore = defineStore('ticket', () => {
 			try {
 				// the api exposes ticket, messages, and the timeline separately; assemble the thread here
 				const [ticket, messages, eventsRes] = await Promise.all([
-					$fetch<Ticket>(`/api/tickets/${id}`, {
+					requestFetch<Ticket>(`/api/tickets/${id}`, {
 						cache: 'no-store',
 						credentials: 'include',
 						headers: authHeaders()
 					}),
-					$fetch<TicketMessage[]>(`/api/tickets/${id}/messages`, {
+					requestFetch<TicketMessage[]>(`/api/tickets/${id}/messages`, {
 						cache: 'no-store',
 						credentials: 'include',
 						headers: authHeaders()
 					}),
 					// timeline is best-effort; a missing/older route must not break the thread
-					$fetch<{ events: TicketEvent[] }>(`/api/tickets/${id}/events`, {
+					requestFetch<{ events: TicketEvent[] }>(`/api/tickets/${id}/events`, {
 						cache: 'no-store',
 						credentials: 'include',
 						headers: authHeaders()
@@ -142,7 +144,7 @@ export const useTicketStore = defineStore('ticket', () => {
 
 	const createTicket = async (body: TicketCreateInput): Promise<Ticket> => {
 		try {
-			const ticket = await $fetch<Ticket>(`/api/tickets`, {
+			const ticket = await requestFetch<Ticket>(`/api/tickets`, {
 				method: 'POST',
 				body,
 				credentials: 'include',
@@ -158,7 +160,7 @@ export const useTicketStore = defineStore('ticket', () => {
 
 	const patchTicket = async (id: number, body: TicketPatchInput): Promise<Ticket> => {
 		try {
-			const ticket = await $fetch<Ticket>(`/api/tickets/${id}`, {
+			const ticket = await requestFetch<Ticket>(`/api/tickets/${id}`, {
 				method: 'PATCH',
 				body,
 				credentials: 'include',
@@ -174,7 +176,7 @@ export const useTicketStore = defineStore('ticket', () => {
 
 	const deleteTicket = async (id: number): Promise<void> => {
 		try {
-			await $fetch(`/api/tickets/${id}`, {
+			await requestFetch(`/api/tickets/${id}`, {
 				method: 'DELETE',
 				credentials: 'include',
 				headers: authHeaders()
@@ -189,7 +191,7 @@ export const useTicketStore = defineStore('ticket', () => {
 
 	const postMessage = async (id: number, body: PostMessageBody) => {
 		try {
-			const result = await $fetch(`/api/tickets/${id}/messages`, {
+			const result = await requestFetch(`/api/tickets/${id}/messages`, {
 				method: 'POST',
 				body,
 				credentials: 'include',
@@ -207,7 +209,7 @@ export const useTicketStore = defineStore('ticket', () => {
 	// participant emails (cc/forwarded) that gain ui access to this ticket
 	const addEmail = async (id: number, email: string, note?: string) => {
 		try {
-			const result = await $fetch(`/api/tickets/${id}/emails`, {
+			const result = await requestFetch(`/api/tickets/${id}/emails`, {
 				method: 'POST',
 				body: { email, ...(note ? { note } : {}) },
 				credentials: 'include',
@@ -224,7 +226,7 @@ export const useTicketStore = defineStore('ticket', () => {
 
 	const removeEmail = async (id: number, email: string) => {
 		try {
-			const result = await $fetch(`/api/tickets/${id}/emails`, {
+			const result = await requestFetch(`/api/tickets/${id}/emails`, {
 				method: 'DELETE',
 				body: { email },
 				credentials: 'include',

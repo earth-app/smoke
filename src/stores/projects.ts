@@ -5,6 +5,8 @@ import { useAuthStore } from '~/stores/auth';
 export type ProjectInput = { name: string; description?: string; color?: string };
 
 export const useProjectsStore = defineStore('projects', () => {
+	// request-scoped so internal api reads route in-process during ssr (avoids the self-loopback stall)
+	const requestFetch = useRequestFetch();
 	const authStore = useAuthStore();
 
 	// list is the source of truth so every useProjects() instance stays in sync
@@ -20,7 +22,7 @@ export const useProjectsStore = defineStore('projects', () => {
 
 		const promise = (async () => {
 			try {
-				const projects = await $fetch<Project[]>(`/api/projects`, {
+				const projects = await requestFetch<Project[]>(`/api/projects`, {
 					cache: 'no-store',
 					credentials: 'include',
 					headers: authHeaders()
@@ -41,7 +43,7 @@ export const useProjectsStore = defineStore('projects', () => {
 
 	const createProject = async (body: ProjectInput): Promise<Project> => {
 		try {
-			const project = await $fetch<Project>(`/api/projects`, {
+			const project = await requestFetch<Project>(`/api/projects`, {
 				method: 'POST',
 				body,
 				credentials: 'include',
@@ -57,7 +59,7 @@ export const useProjectsStore = defineStore('projects', () => {
 
 	const updateProject = async (id: number, body: Partial<ProjectInput>): Promise<Project> => {
 		try {
-			const project = await $fetch<Project>(`/api/projects/${id}`, {
+			const project = await requestFetch<Project>(`/api/projects/${id}`, {
 				method: 'PATCH',
 				body,
 				credentials: 'include',
@@ -73,7 +75,7 @@ export const useProjectsStore = defineStore('projects', () => {
 
 	const deleteProject = async (id: number): Promise<void> => {
 		try {
-			await $fetch(`/api/projects/${id}`, {
+			await requestFetch(`/api/projects/${id}`, {
 				method: 'DELETE',
 				credentials: 'include',
 				headers: authHeaders()

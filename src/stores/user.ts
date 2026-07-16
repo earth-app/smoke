@@ -2,6 +2,8 @@ import { defineStore } from 'pinia';
 import { type User } from '~/shared/types/user';
 
 export const useUserStore = defineStore('user', () => {
+	// request-scoped so internal api reads route in-process during ssr (avoids the self-loopback stall)
+	const requestFetch = useRequestFetch();
 	const authStore = useAuthStore();
 	const cache = reactive(new Map<string, User>());
 	const avatars = reactive(new Map<string, Blob>());
@@ -23,7 +25,7 @@ export const useUserStore = defineStore('user', () => {
 
 	const createUser = async (payload: { username: string; email: string }) => {
 		try {
-			const user = await $fetch<User>(`/api/users`, {
+			const user = await requestFetch<User>(`/api/users`, {
 				method: 'POST',
 				body: payload,
 				credentials: 'include'
@@ -39,7 +41,7 @@ export const useUserStore = defineStore('user', () => {
 	const listUsers = async (options?: QueryParameters) => {
 		try {
 			const params = toSearchParams(options);
-			const users = await $fetch<User[]>(`/api/users?${params.toString()}`, {
+			const users = await requestFetch<User[]>(`/api/users?${params.toString()}`, {
 				cache: 'no-store',
 				credentials: 'include'
 			});
@@ -57,7 +59,7 @@ export const useUserStore = defineStore('user', () => {
 		}
 
 		try {
-			const user = await $fetch<User>(`/api/users/${encodeURIComponent(identifier)}`, {
+			const user = await requestFetch<User>(`/api/users/${encodeURIComponent(identifier)}`, {
 				cache: 'no-store',
 				credentials: 'include'
 			});
@@ -71,7 +73,7 @@ export const useUserStore = defineStore('user', () => {
 
 	const updateUser = async (payload: Partial<User> & { id: string }) => {
 		try {
-			const updatedUser = await $fetch<User>(`/api/users/${encodeURIComponent(payload.id)}`, {
+			const updatedUser = await requestFetch<User>(`/api/users/${encodeURIComponent(payload.id)}`, {
 				method: 'PATCH',
 				body: payload,
 				credentials: 'include'
@@ -86,7 +88,7 @@ export const useUserStore = defineStore('user', () => {
 
 	const deleteUser = async (id: string) => {
 		try {
-			await $fetch(`/api/users/${encodeURIComponent(id)}`, {
+			await requestFetch(`/api/users/${encodeURIComponent(id)}`, {
 				method: 'DELETE',
 				credentials: 'include'
 			});
@@ -103,7 +105,7 @@ export const useUserStore = defineStore('user', () => {
 		}
 
 		try {
-			const response = await $fetch<Blob>(`/api/users/${encodeURIComponent(userId)}/avatar`, {
+			const response = await requestFetch<Blob>(`/api/users/${encodeURIComponent(userId)}/avatar`, {
 				cache: 'no-store',
 				credentials: 'include',
 				responseType: 'blob'
@@ -124,13 +126,16 @@ export const useUserStore = defineStore('user', () => {
 			const body = resolveAvatarBody(avatar);
 
 			// the endpoint returns the updated user, not the image blob
-			const updatedUser = await $fetch<User>(`/api/users/${encodeURIComponent(userId)}/avatar`, {
-				method: 'POST',
-				body,
-				credentials: 'include',
-				// avatar.post is Bearer-gated (ensureLoggedIn); the cookie alone 401s
-				headers: bearerHeaders(authStore.sessionToken)
-			});
+			const updatedUser = await requestFetch<User>(
+				`/api/users/${encodeURIComponent(userId)}/avatar`,
+				{
+					method: 'POST',
+					body,
+					credentials: 'include',
+					// avatar.post is Bearer-gated (ensureLoggedIn); the cookie alone 401s
+					headers: bearerHeaders(authStore.sessionToken)
+				}
+			);
 
 			set(updatedUser);
 
@@ -160,6 +165,8 @@ export const useUserStore = defineStore('user', () => {
 });
 
 export const useCustomerStore = defineStore('customer', () => {
+	// request-scoped so internal api reads route in-process during ssr (avoids the self-loopback stall)
+	const requestFetch = useRequestFetch();
 	const authStore = useAuthStore();
 
 	const cache = reactive(new Map<number, Customer>());
@@ -183,7 +190,7 @@ export const useCustomerStore = defineStore('customer', () => {
 
 		const promise = (async () => {
 			try {
-				const customers = await $fetch<Customer[]>(`/api/customers?${key}`, {
+				const customers = await requestFetch<Customer[]>(`/api/customers?${key}`, {
 					cache: 'no-store',
 					credentials: 'include',
 					headers: authHeaders()
@@ -210,7 +217,7 @@ export const useCustomerStore = defineStore('customer', () => {
 
 		const promise = (async () => {
 			try {
-				const customer = await $fetch<Customer>(`/api/customers/${id}`, {
+				const customer = await requestFetch<Customer>(`/api/customers/${id}`, {
 					cache: 'no-store',
 					credentials: 'include',
 					headers: authHeaders()
@@ -231,7 +238,7 @@ export const useCustomerStore = defineStore('customer', () => {
 
 	const createCustomer = async (body: Partial<Customer>): Promise<Customer> => {
 		try {
-			const customer = await $fetch<Customer>(`/api/customers`, {
+			const customer = await requestFetch<Customer>(`/api/customers`, {
 				method: 'POST',
 				body,
 				credentials: 'include',
@@ -247,7 +254,7 @@ export const useCustomerStore = defineStore('customer', () => {
 
 	const patchCustomer = async (id: number, body: Partial<Customer>): Promise<Customer> => {
 		try {
-			const customer = await $fetch<Customer>(`/api/customers/${id}`, {
+			const customer = await requestFetch<Customer>(`/api/customers/${id}`, {
 				method: 'PATCH',
 				body,
 				credentials: 'include',
@@ -263,7 +270,7 @@ export const useCustomerStore = defineStore('customer', () => {
 
 	const deleteCustomer = async (id: number): Promise<void> => {
 		try {
-			await $fetch(`/api/customers/${id}`, {
+			await requestFetch(`/api/customers/${id}`, {
 				method: 'DELETE',
 				credentials: 'include',
 				headers: authHeaders()
@@ -277,7 +284,7 @@ export const useCustomerStore = defineStore('customer', () => {
 
 	// mint a portal magic-link for a customer; returns the shareable url
 	const customerMagicLink = async (id: number): Promise<string> => {
-		const { url } = await $fetch<{ url: string; token: string }>(
+		const { url } = await requestFetch<{ url: string; token: string }>(
 			`/api/customers/${id}/magic-link`,
 			{
 				method: 'POST',
@@ -302,6 +309,8 @@ export const useCustomerStore = defineStore('customer', () => {
 });
 
 export const useCustomerPortalStore = defineStore('customer-portal', () => {
+	// request-scoped so internal api reads route in-process during ssr (avoids the self-loopback stall)
+	const requestFetch = useRequestFetch();
 	// undefined = not yet loaded, null = signed out, Customer = signed in
 	const customer = ref<Customer | null | undefined>(undefined);
 	const isLoading = ref(false);
@@ -319,7 +328,7 @@ export const useCustomerPortalStore = defineStore('customer-portal', () => {
 		isLoading.value = true;
 		fetchPromise.value = (async () => {
 			try {
-				const response = await $fetch<{ customer: Customer | null }>('/api/portal/me', {
+				const response = await requestFetch<{ customer: Customer | null }>('/api/portal/me', {
 					cache: 'no-store',
 					credentials: 'include'
 				});
@@ -339,7 +348,7 @@ export const useCustomerPortalStore = defineStore('customer-portal', () => {
 	};
 
 	const requestOtp = async (email: string, turnstile?: string): Promise<void> => {
-		await $fetch('/api/portal/request-otp', {
+		await requestFetch('/api/portal/request-otp', {
 			method: 'POST',
 			body: { email, ...(turnstile ? { turnstile } : {}) },
 			credentials: 'include'
@@ -347,7 +356,7 @@ export const useCustomerPortalStore = defineStore('customer-portal', () => {
 	};
 
 	const verifyOtp = async (email: string, code: string): Promise<Customer> => {
-		const response = await $fetch<{ customer: Customer }>('/api/portal/verify-otp', {
+		const response = await requestFetch<{ customer: Customer }>('/api/portal/verify-otp', {
 			method: 'POST',
 			body: { email, code },
 			credentials: 'include'
@@ -358,7 +367,7 @@ export const useCustomerPortalStore = defineStore('customer-portal', () => {
 
 	const logout = async (): Promise<void> => {
 		try {
-			await $fetch('/api/portal/logout', { method: 'POST', credentials: 'include' });
+			await requestFetch('/api/portal/logout', { method: 'POST', credentials: 'include' });
 		} catch (error) {
 			console.error('Customer logout failed:', error);
 		} finally {

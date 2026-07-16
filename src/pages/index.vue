@@ -134,13 +134,19 @@
 				v-if="canViewAnalytics"
 				class="mx-auto w-full max-w-5xl px-4 pb-8 sm:px-8"
 			>
-				<AppSummaryStats />
+				<LazyAppSummaryStats hydrate-on-visible />
 			</section>
 
 			<section class="mx-auto grid w-full max-w-5xl gap-6 px-4 pb-24 sm:px-8 lg:grid-cols-2">
-				<AppRecentTickets />
-				<AppRecentCustomers v-if="canViewAnalytics" />
-				<AppSettingsPreview v-if="canManageSettings" />
+				<LazyAppRecentTickets hydrate-on-visible />
+				<LazyAppRecentCustomers
+					v-if="canViewAnalytics"
+					hydrate-on-visible
+				/>
+				<LazyAppSettingsPreview
+					v-if="canManageSettings"
+					hydrate-on-visible
+				/>
 			</section>
 		</template>
 
@@ -165,7 +171,7 @@
 				v-if="myRequests.length"
 				class="mx-auto w-full max-w-2xl px-4 pb-12 sm:px-8"
 			>
-				<TicketMyRequests />
+				<LazyTicketMyRequests hydrate-on-visible />
 			</section>
 
 			<section class="mx-auto w-full max-w-2xl px-4 pb-24 sm:px-8">

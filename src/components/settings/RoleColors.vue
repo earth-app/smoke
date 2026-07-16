@@ -10,7 +10,16 @@
 			</p>
 		</div>
 
-		<div class="flex flex-col gap-4">
+		<Skeleton
+			v-if="!loaded"
+			variant="avatar"
+			:repeat="3"
+			:gap="4"
+		/>
+		<div
+			v-else
+			class="flex flex-col gap-4"
+		>
 			<UFormField
 				v-for="row in roles"
 				:key="row.key"
@@ -62,7 +71,7 @@ import { Role } from '~/shared/types/user';
 type AvatarColor = 'primary' | 'secondary' | 'success' | 'info' | 'warning' | 'error' | 'neutral';
 
 const toast = useToast();
-const { settings, save } = useSettings();
+const { settings, loaded, save } = useSettings();
 const { isAdmin, isManager } = useAuth();
 
 const roles: { key: Role; label: string }[] = [

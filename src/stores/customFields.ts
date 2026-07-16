@@ -3,6 +3,8 @@ import type { CustomFieldDef } from '~/shared/types/ticket';
 import { useAuthStore } from '~/stores/auth';
 
 export const useCustomFieldsStore = defineStore('customFields', () => {
+	// request-scoped so internal api reads route in-process during ssr (avoids the self-loopback stall)
+	const requestFetch = useRequestFetch();
 	const authStore = useAuthStore();
 
 	const fields = ref<CustomFieldDef[]>([]);
@@ -17,7 +19,7 @@ export const useCustomFieldsStore = defineStore('customFields', () => {
 
 		fetchPromise.value = (async () => {
 			try {
-				const result = await $fetch<CustomFieldDef[]>(`/api/custom-fields`, {
+				const result = await requestFetch<CustomFieldDef[]>(`/api/custom-fields`, {
 					cache: 'no-store',
 					credentials: 'include',
 					headers: authHeaders()
@@ -38,7 +40,7 @@ export const useCustomFieldsStore = defineStore('customFields', () => {
 
 	const save = async (defs: CustomFieldDef[]): Promise<CustomFieldDef[]> => {
 		try {
-			const result = await $fetch<CustomFieldDef[]>(`/api/custom-fields`, {
+			const result = await requestFetch<CustomFieldDef[]>(`/api/custom-fields`, {
 				method: 'POST',
 				body: { fields: defs },
 				credentials: 'include',

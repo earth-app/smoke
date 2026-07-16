@@ -35,6 +35,8 @@ export type CloudflareProvisionInput = {
 };
 
 export const useCloudflareStore = defineStore('cloudflare', () => {
+	// request-scoped so internal api reads route in-process during ssr (avoids the self-loopback stall)
+	const requestFetch = useRequestFetch();
 	const authStore = useAuthStore();
 
 	const status = ref<CloudflareStatus | null>(null);
@@ -54,7 +56,7 @@ export const useCloudflareStore = defineStore('cloudflare', () => {
 
 		statusPromise.value = (async () => {
 			try {
-				const result = await $fetch<CloudflareStatus>(`/api/cloudflare/status`, {
+				const result = await requestFetch<CloudflareStatus>(`/api/cloudflare/status`, {
 					cache: 'no-store',
 					credentials: 'include',
 					headers: authHeaders()
@@ -79,11 +81,14 @@ export const useCloudflareStore = defineStore('cloudflare', () => {
 
 		workersPromise.value = (async () => {
 			try {
-				const result = await $fetch<{ workers: CloudflareWorker[] }>(`/api/cloudflare/workers`, {
-					cache: 'no-store',
-					credentials: 'include',
-					headers: authHeaders()
-				});
+				const result = await requestFetch<{ workers: CloudflareWorker[] }>(
+					`/api/cloudflare/workers`,
+					{
+						cache: 'no-store',
+						credentials: 'include',
+						headers: authHeaders()
+					}
+				);
 				workers.value = result?.workers ?? [];
 				return workers.value;
 			} catch (error) {
@@ -99,7 +104,7 @@ export const useCloudflareStore = defineStore('cloudflare', () => {
 
 	const link = async (body: { account_id: string; token: string }): Promise<CloudflareStatus> => {
 		try {
-			const result = await $fetch<CloudflareStatus>(`/api/cloudflare/link`, {
+			const result = await requestFetch<CloudflareStatus>(`/api/cloudflare/link`, {
 				method: 'POST',
 				body,
 				credentials: 'include',
@@ -115,7 +120,7 @@ export const useCloudflareStore = defineStore('cloudflare', () => {
 
 	const provision = async (body: CloudflareProvisionInput): Promise<CloudflareProvisionResult> => {
 		try {
-			const result = await $fetch<CloudflareProvisionResult>(`/api/cloudflare/provision`, {
+			const result = await requestFetch<CloudflareProvisionResult>(`/api/cloudflare/provision`, {
 				method: 'POST',
 				body,
 				credentials: 'include',
@@ -132,7 +137,7 @@ export const useCloudflareStore = defineStore('cloudflare', () => {
 
 	const unlink = async (): Promise<void> => {
 		try {
-			await $fetch(`/api/cloudflare/unlink`, {
+			await requestFetch(`/api/cloudflare/unlink`, {
 				method: 'DELETE',
 				credentials: 'include',
 				headers: authHeaders()
