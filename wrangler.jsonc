@@ -1,16 +1,10 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"compatibility_date": "2026-05-18",
-	"compatibility_flags": [
-		"nodejs_compat"
-	],
+	"compatibility_flags": ["nodejs_compat"],
 	"triggers": {
 		// inbound-mail poll (no-op unless a mailbox is configured) + daily retention + audit sweeps
-		"crons": [
-			"*/15 * * * *",
-			"0 3 * * *",
-			"30 3 * * *"
-		]
+		"crons": ["*/15 * * * *", "0 3 * * *", "30 3 * * *"]
 	},
 	"d1_databases": [
 		{
