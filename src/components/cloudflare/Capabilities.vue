@@ -119,12 +119,12 @@ const result = ref<Result | null>(null);
 const testing = ref(false);
 
 const permissionHints = [
-	'Account > Email Routing Addresses > Edit',
-	'Zone > Email Routing > Edit',
-	'Zone > DNS > Edit (to auto-create MX / SPF / DKIM)',
-	'Account > Workers Scripts > Edit (for the inbound worker)',
-	'Account > Workers AI > Read (for AI-powered replies)',
-	'Zone > Email > Edit (for Cloudflare Email Sending onboarding)',
+	'Account > Email Sending > Edit (send outbound email)',
+	'Account > Email Routing Addresses > Edit (inbound destination address)',
+	'Zone > Email Routing > Edit (inbound catch-all rule)',
+	'Zone > DNS > Edit (auto-create MX / SPF / DKIM)',
+	'Account > Workers Scripts > Edit (inbound worker)',
+	'Account > Workers AI > Read (AI-powered replies)',
 	'Zone > Zone > Read'
 ];
 
