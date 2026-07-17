@@ -6,6 +6,10 @@ on:
       changelog:
         type: string
         description: 'Changelog to replace the auto-generated one'
+      suffix:
+        type: string
+        description: 'Suffix to append to the version'
+        default: ''
 
 jobs:
   release:
@@ -13,32 +17,11 @@ jobs:
 
     permissions:
       contents: write
-      packages: write
 
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - name: Install Dependencies
-        run: |
-          bun install --global husky
-          bun install --frozen-lockfile
-      - name: Build Project
-        run: bun run build
-      - name: Publish to NPM
-        if: success() || failure()
-        run: bun publish --registry https://registry.npmjs.org
-        env:
-          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: Publish to GitHub Packages
-        if: success() || failure()
-        run: bun publish --registry https://npm.pkg.github.com
-        env:
-          NPM_CONFIG_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Extract Version from package.json
         run: |
           VERSION=$(node -p "require('./package.json').version")
@@ -55,12 +38,12 @@ jobs:
           configuration: '.github/release.json'
           mode: 'HYBRID'
           fromTag: '${{ env.LATEST_TAG }}'
-          toTag: 'master'
+          toTag: '${{ github.ref_name }}'
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: v${{ env.VERSION }}
-          name: smoke v${{ env.VERSION }}
+          tag_name: v${{ env.VERSION }}${{ github.event.inputs.suffix }}
+          name: smoke v${{ env.VERSION }}${{ github.event.inputs.suffix }}
           body: ${{ steps.changelog.outputs.changelog || github.event.inputs.changelog }}
           draft: false
           prerelease: false
