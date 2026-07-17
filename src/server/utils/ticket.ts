@@ -1098,17 +1098,25 @@ export async function patchTicket(
 		// per-label + per-assignee add/remove triggers, diffed against the pre-write snapshot
 		await fireLabelAssigneeDiffs(ticket, beforeLabels, beforeAssignees, env);
 
-		// lifecycle notifications (close/reopen/archive) for non-email-thread tickets
+		// lifecycle + status-change notifications to everyone on the ticket (minus the acting agent)
+		const notifyOpts = { actorId: options.actorId };
 		if (beforeRow) {
-			const closed = [TicketStatus.Closed, TicketStatus.WontFix];
-			const wasClosed = closed.includes(normalizeTicketStatus(beforeRow.status));
-			const nowClosed = closed.includes(ticket.status);
-			if (!wasClosed && nowClosed) await notifyTicketEvent('closed', ticket, env).catch(() => {});
+			const beforeStatus = normalizeTicketStatus(beforeRow.status);
+			const wasClosed = CLOSED_STATUSES.includes(beforeStatus);
+			const nowClosed = CLOSED_STATUSES.includes(ticket.status);
+			if (!wasClosed && nowClosed)
+				await notifyTicketEvent('closed', ticket, env, notifyOpts).catch(() => {});
 			else if (wasClosed && !nowClosed)
-				await notifyTicketEvent('reopened', ticket, env).catch(() => {});
+				await notifyTicketEvent('reopened', ticket, env, notifyOpts).catch(() => {});
+			else if (beforeStatus !== ticket.status)
+				await notifyTicketEvent('status', ticket, env, {
+					...notifyOpts,
+					fromStatus: beforeStatus,
+					toStatus: ticket.status
+				}).catch(() => {});
 		}
 		if (updates.archived === true) {
-			await notifyTicketEvent('archived', ticket, env).catch(() => {});
+			await notifyTicketEvent('archived', ticket, env, notifyOpts).catch(() => {});
 		}
 	}
 	return ticket;
@@ -1191,6 +1199,13 @@ export async function deleteTicket(
 	await invalidateTicketCache(id);
 }
 
+export type TicketListFilters = {
+	// specific TicketStatus values to keep (empty = any status)
+	statuses?: string[];
+	// archived lives in KV meta, filtered post-hydrate: exclude (default list), only, or all
+	archived?: 'exclude' | 'only' | 'all';
+};
+
 export async function listTickets(
 	env: any,
 	search: string,
@@ -1199,11 +1214,23 @@ export async function listTickets(
 	offset: number,
 	sort: keyof DBTicket,
 	sort_direction: 'asc' | 'desc',
-	current: User | null = null
+	current: User | null = null,
+	filters: TicketListFilters = {}
 ): Promise<Ticket[]> {
 	ensureCollegeDB(env);
 
-	const cacheKey = `${TICKET_LIST_PREFIX}${search}:${page}:${limit}:${sort}:${sort_direction}`;
+	const validStatus = new Set<string>(Object.values(TicketStatus));
+	const statuses = (filters.statuses ?? []).filter((s) => validStatus.has(s));
+	const archivedMode = filters.archived ?? 'all';
+	// fold the caller's visibility + the status/archived filters into the key, else two users with
+	// different private-ticket access could be served the same cached (mis-filtered) list
+	const visKey = !current
+		? 'anon'
+		: current.permissions.includes(Permission.ViewPrivateTickets)
+			? 'full'
+			: `ltd:${current.id}`;
+	const statusKey = statuses.slice().sort().join('+');
+	const cacheKey = `${TICKET_LIST_PREFIX}${search}:${page}:${limit}:${sort}:${sort_direction}:${visKey}:${statusKey}:${archivedMode}`;
 	return await cache(cacheKey, async () => {
 		const bindings: Array<string | number> = [];
 		const clauses: string[] = [];
@@ -1211,6 +1238,11 @@ export async function listTickets(
 		if (search) {
 			clauses.push('(title LIKE ? OR description LIKE ?)');
 			bindings.push(`%${search}%`, `%${search}%`);
+		}
+
+		if (statuses.length) {
+			clauses.push(`(${statuses.map(() => 'status = ?').join(' OR ')})`);
+			bindings.push(...statuses);
 		}
 
 		if (!current) {
@@ -1229,9 +1261,13 @@ export async function listTickets(
 			limit
 		});
 
-		return await Promise.all(
+		const hydrated = await Promise.all(
 			result.results.map(async (ticket) => await hydrateTicket(ticket, env))
 		);
+
+		if (archivedMode === 'exclude') return hydrated.filter((t) => t.archived !== true);
+		if (archivedMode === 'only') return hydrated.filter((t) => t.archived === true);
+		return hydrated;
 	});
 }
 
