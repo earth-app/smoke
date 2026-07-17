@@ -15,6 +15,19 @@ export default defineEventHandler(async (event) => {
 			'assignees'
 		]);
 
+		// optional server-side filters; listTickets validates status tokens against the enum
+		const raw = getQuery(event);
+		const statusParam = typeof raw.status === 'string' ? raw.status : '';
+		const statuses = statusParam
+			.split(',')
+			.map((s) => s.trim())
+			.filter(Boolean);
+		const archivedRaw = typeof raw.archived === 'string' ? raw.archived : '';
+		const archived: 'exclude' | 'only' | 'all' =
+			archivedRaw === 'exclude' || archivedRaw === 'only' || archivedRaw === 'all'
+				? archivedRaw
+				: 'all';
+
 		const env = event.context.cloudflare.env;
 		ensureCollegeDB(env);
 		const current = await getOptionalLoggedIn(event);
@@ -27,7 +40,8 @@ export default defineEventHandler(async (event) => {
 			offset,
 			sort as keyof DBTicket,
 			sort_direction,
-			current
+			current,
+			{ statuses, archived }
 		);
 	} catch (error) {
 		if (typeof error === 'object' && error !== null && 'statusCode' in error) {

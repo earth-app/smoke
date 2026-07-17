@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TicketEvent, TicketMessage } from '~/shared/types/ticket';
-import { mergeThreadEntries } from '~/utils/ticket-thread';
+import { mergeThreadEntries } from '~/utils/tickets';
 
 const msg = (id: number, created_at: unknown): TicketMessage =>
 	({ id, ticket_id: 1, created_at }) as unknown as TicketMessage;
