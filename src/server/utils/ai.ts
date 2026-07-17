@@ -33,7 +33,8 @@ export async function isAiEnabled(env: any): Promise<boolean> {
 	const ai = await getAiSettings();
 	if (!ai.enabled) return false;
 	const cf = await getCloudflareSettings();
-	return Boolean(cf.account_id && cloudflareApiToken(env));
+	// sealed/linked token first, then env (a ui-linked account stores it sealed, not in env)
+	return Boolean(cf.account_id && (await resolveCloudflareToken(env)));
 }
 
 // whether the linked cloudflare account can actually drive workers ai (account + token + scope)
@@ -119,7 +120,8 @@ export async function generateAiReply(
 
 	try {
 		const cf = await getCloudflareSettings();
-		const token = cloudflareApiToken(env);
+		// sealed/linked token first, then env (a ui-linked account stores it sealed, not in env)
+		const token = await resolveCloudflareToken(env);
 		if (!cf.account_id || !token) return null;
 
 		const body: Record<string, unknown> = {

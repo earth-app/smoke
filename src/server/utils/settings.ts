@@ -454,7 +454,20 @@ export function cloudflareApiToken(env: any): string {
 	return String(env?.CF_API_TOKEN || env?.CF_EMAIL_TOKEN || '');
 }
 
-// resolve the active outbound transport: env override -> custom smtp -> cloudflare email service
+export async function resolveCloudflareToken(env: any): Promise<string> {
+	const masterKey = env?.MASTER_KEY;
+	if (masterKey) {
+		const sealed = await kv
+			.get<SealedSecret>(settingKey('cloudflare_token'), 'json')
+			.catch(() => null);
+		if (sealed) {
+			const token = await openSecret(sealed, masterKey).catch(() => '');
+			if (token) return token;
+		}
+	}
+	return cloudflareApiToken(env) || '';
+}
+
 export async function getEmailConfig(env: any): Promise<ResolvedTransport | null> {
 	const override = envSmtpOverride(env);
 	if (override) return override;
@@ -479,8 +492,10 @@ export async function getEmailConfig(env: any): Promise<ResolvedTransport | null
 		};
 	}
 
-	// cloudflare email service polyfill (default)
-	const token = cloudflareApiToken(env);
+	// cloudflare email service polyfill (default); sealed/linked token first, then env (see helper).
+	// reading env-only here made a linked account report "configured" but fail to actually send
+	// (test-email + real agent replies)
+	const token = await resolveCloudflareToken(env);
 	const support = email.support_email || env?.SUPPORT_EMAIL;
 	if (token && support) {
 		return {
