@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildBimiSvg, fallbackBimiSvg } from '~/server/utils/bimi';
+import { buildBimiSvg, fallbackBimiSvg, parseBimiRecord } from '~/server/utils/bimi';
 import { parseDmarcRecord, provisionBimi, setMockCf } from '~/server/utils/cloudflare';
 import { Role } from '~/shared/types/user';
 import { eventFor, getRuntime, importRoute, mockBody, mockQuery, seedUser } from './route-runtime';
@@ -106,6 +106,16 @@ describe('fallbackBimiSvg', () => {
 	});
 });
 
+describe('parseBimiRecord', () => {
+	it('extracts the logo + vmc urls; an empty a= tag is null', () => {
+		expect(
+			parseBimiRecord('v=BIMI1; l=https://x.test/logo.svg; a=https://x.test/vmc.pem;')
+		).toEqual({ logo: 'https://x.test/logo.svg', vmc: 'https://x.test/vmc.pem' });
+		expect(parseBimiRecord('v=BIMI1; l=https://x.test/logo.svg; a=;').vmc).toBe(null);
+		expect(parseBimiRecord(null)).toEqual({ logo: null, vmc: null });
+	});
+});
+
 describe('parseDmarcRecord', () => {
 	it('treats quarantine/reject at full coverage as enforced (BIMI-ready)', () => {
 		expect(parseDmarcRecord('v=DMARC1; p=reject').enforced).toBe(true);
@@ -132,7 +142,21 @@ describe('provisionBimi (mock)', () => {
 		expect(result.record.name).toBe('default._bimi.acme.test');
 		expect(result.record.content).toContain('v=BIMI1');
 		expect(result.record.content).toContain('l=https://acme.test/bimi/logo.svg');
+		expect(result.record.content).toContain('a=;');
 		expect(result.dmarc.enforced).toBe(true);
+		setMockCf(false);
+	});
+
+	it('bakes a provided vmc url into the a= tag', async () => {
+		setMockCf(true);
+		const result = await provisionBimi(
+			'tok',
+			'zone-1',
+			'acme.test',
+			'https://acme.test/bimi/logo.svg',
+			{ vmcUrl: 'https://acme.test/vmc.pem' }
+		);
+		expect(result.record.content).toContain('a=https://acme.test/vmc.pem;');
 		setMockCf(false);
 	});
 });
@@ -185,6 +209,14 @@ describe('cloudflare BIMI routes (mock)', () => {
 		expect(result.record.name).toBe('default._bimi.acme.test');
 		expect(result.logo_url).toContain('/bimi/logo.svg');
 		expect(result.dmarc.enforced).toBe(true);
+	});
+
+	it('provision-bimi bakes a provided vmc url into the record', async () => {
+		const admin = await linkAndConfigure();
+		const handler = await importRoute('~/server/api/cloudflare/provision-bimi.post');
+		mockBody({ vmc_url: 'https://acme.test/vmc.pem' });
+		const result = (await handler(eventFor(mockEnv(), admin.sessionToken))) as any;
+		expect(result.record.content).toContain('a=https://acme.test/vmc.pem;');
 	});
 
 	it('bimi-status reports configured when the record + enforced dmarc exist', async () => {
