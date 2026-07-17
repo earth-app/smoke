@@ -24,6 +24,24 @@
 		<div
 			class="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
 		>
+			<Transition
+				enter-active-class="transition-opacity"
+				leave-active-class="transition-opacity"
+				enter-from-class="opacity-0"
+				leave-to-class="opacity-0"
+			>
+				<div
+					v-if="saving"
+					class="flex items-center gap-1.5 text-xs text-slate-400"
+				>
+					<UIcon
+						name="mdi:loading"
+						class="animate-spin"
+					/>
+					<span>Saving...</span>
+				</div>
+			</Transition>
+
 			<UFormField
 				label="Status"
 				size="sm"
@@ -184,6 +202,7 @@ const props = defineProps<{
 	customer?: Customer | null;
 	labels: Label[];
 	users: User[];
+	saving?: boolean;
 }>();
 
 const emit = defineEmits<{ patch: [body: TicketPatchInput]; labelsChanged: [] }>();
