@@ -15,6 +15,7 @@
 			<template #branding>
 				<div class="mt-4 flex flex-col gap-4">
 					<SettingsBrandingForm />
+					<SettingsEmailLogo />
 					<SettingsRoleIcons />
 					<SettingsRoleColors />
 				</div>
@@ -151,6 +152,11 @@
 						<CloudflareCapabilities />
 					</div>
 					<CloudflareEmailOnboarding />
+					<div
+						class="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"
+					>
+						<CloudflareBimiOnboarding />
+					</div>
 					<SettingsSecurity />
 				</div>
 			</template>
@@ -237,9 +243,9 @@ import type { ContextMenuItem, TabsItem } from '@nuxt/ui';
 definePageMeta({ layout: 'dashboard', middleware: 'admin' });
 
 const toast = useToast();
+const route = useRoute();
+const router = useRouter();
 const { settings, fetchSettings, save, saveEmail, sendTestEmail } = useSettings();
-
-const tab = ref('branding');
 
 const tabItems: TabsItem[] = [
 	{ label: 'Branding', slot: 'branding', value: 'branding', icon: 'mdi:palette-outline' },
@@ -259,6 +265,24 @@ const tabItems: TabsItem[] = [
 	{ label: 'Audit', slot: 'audit', value: 'audit', icon: 'mdi:clipboard-text-clock-outline' },
 	{ label: 'Danger', slot: 'danger', value: 'danger', icon: 'mdi:alert-outline' }
 ];
+
+// deep-link a section via ?section=; a refresh returns to the tab you were on
+const validSections = new Set(tabItems.map((item) => item.value as string));
+function sectionFromQuery(): string {
+	const value = route.query.section as string | undefined;
+	return value && validSections.has(value) ? value : 'branding';
+}
+const tab = ref(sectionFromQuery());
+watch(
+	() => route.query.section,
+	() => {
+		tab.value = sectionFromQuery();
+	}
+);
+watch(tab, (value) => {
+	if ((route.query.section as string | undefined) === value) return;
+	router.replace({ query: { ...route.query, section: value } });
+});
 
 const emailForm = reactive({
 	transport: 'cloudflare' as 'cloudflare' | 'smtp',

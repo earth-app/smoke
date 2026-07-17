@@ -73,15 +73,23 @@ export async function decryptUsers(users: DBUser[], masterKey: string): Promise<
 const OWNER_KEY = 'smoke:owner_user';
 
 export async function getOwnerUserId(): Promise<string | null> {
-	try {
-		return (await kv.get<string>(OWNER_KEY)) ?? null;
-	} catch {
-		return null;
-	}
+	// read on every current-user fetch (is_owner flag); cache it so the owner never costs a kv get
+	return await cache(
+		OWNER_USER_KEY,
+		async () => {
+			try {
+				return (await kv.get<string>(OWNER_KEY)) ?? null;
+			} catch {
+				return null;
+			}
+		},
+		3600
+	);
 }
 
 export async function setOwnerUserId(id: string): Promise<void> {
 	await kv.set(OWNER_KEY, id);
+	await invalidateOwnerUser();
 }
 
 export async function isOwnerUser(id: string): Promise<boolean> {

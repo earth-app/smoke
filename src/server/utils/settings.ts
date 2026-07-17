@@ -41,7 +41,8 @@ const JSON_SETTING_KEYS = [
 	'role_icons',
 	'role_colors',
 	'avatars',
-	'security'
+	'security',
+	'bimi'
 ] as const;
 
 // default workers ai model; agent verifies against the live catalog at build time
@@ -126,6 +127,18 @@ export type AiSettings = {
 	system_append?: string;
 	temperature?: number;
 	max_tokens?: number;
+};
+
+// bimi brand-logo config: an iconify icon + fixed colors, rendered as a BIMI-compliant svg served
+// at /bimi/logo.svg for the default._bimi dns record (colors must be hex; BIMI forbids css/currentColor)
+export type BimiSettings = {
+	enabled: boolean;
+	icon: string;
+	fill: string;
+	background: string;
+	stroke_color: string;
+	stroke_width: number;
+	title: string;
 };
 
 // per-role default avatar icon (iconify name) applied when a user has no avatar
@@ -229,6 +242,7 @@ const POLL_PASSWORD_KEY = settingKey('email_poll_password');
 export async function sealEmailPollPassword(value: string, masterKey: string): Promise<void> {
 	const sealed = await sealSecret(value, masterKey);
 	await kv.set(POLL_PASSWORD_KEY, JSON.stringify(sealed));
+	await invalidateSettings();
 }
 
 // #endregion
@@ -254,6 +268,7 @@ export async function getStringSetting(name: string): Promise<string | null> {
 
 export async function setStringSetting(name: string, value: string): Promise<void> {
 	await kv.set(settingKey(name), value);
+	await invalidateSettings();
 }
 
 export async function setJsonSetting(
@@ -261,6 +276,7 @@ export async function setJsonSetting(
 	value: unknown
 ): Promise<void> {
 	await kv.set(settingKey(name), JSON.stringify(value));
+	await invalidateSettings();
 }
 
 export async function getEmailSettings(): Promise<EmailSettings> {
@@ -322,6 +338,19 @@ export async function getAiSettings(): Promise<AiSettings> {
 	};
 }
 
+export async function getBimiSettings(): Promise<BimiSettings> {
+	const stored = await getJson<Partial<BimiSettings>>('bimi', {});
+	return {
+		enabled: stored.enabled === true,
+		icon: typeof stored.icon === 'string' ? stored.icon : '',
+		fill: typeof stored.fill === 'string' ? stored.fill : '',
+		background: typeof stored.background === 'string' ? stored.background : '',
+		stroke_color: typeof stored.stroke_color === 'string' ? stored.stroke_color : '',
+		stroke_width: typeof stored.stroke_width === 'number' ? stored.stroke_width : 0,
+		title: typeof stored.title === 'string' ? stored.title : ''
+	};
+}
+
 export async function getRoleIcons(): Promise<RoleIcons> {
 	return await getJson<RoleIcons>('role_icons', {});
 }
@@ -356,8 +385,13 @@ export async function getSecuritySettings(): Promise<SecuritySettings> {
 	return { pbkdf2_iterations };
 }
 
-// full public-safe settings for the settings api + client store (never secrets)
+// full public-safe settings for the settings api + client store (never secrets). read on nearly
+// every page, so it's cached short-term and busted by every settings write (setString/setJson/seal)
 export async function getAllSettings() {
+	return await cache(SETTINGS_KEY, buildAllSettings, 60);
+}
+
+async function buildAllSettings() {
 	const strings: Partial<Record<(typeof STRING_SETTING_KEYS)[number], string>> = {};
 	await Promise.all(
 		STRING_SETTING_KEYS.map(async (k) => {
@@ -379,7 +413,8 @@ export async function getAllSettings() {
 		roleIcons,
 		roleColors,
 		avatarPolicy,
-		security
+		security,
+		bimi
 	] = await Promise.all([
 		getEmailSettings(),
 		getCloudflareSettings(),
@@ -394,7 +429,8 @@ export async function getAllSettings() {
 		getRoleIcons(),
 		getRoleColors(),
 		getAvatarPolicy(),
-		getSecuritySettings()
+		getSecuritySettings(),
+		getBimiSettings()
 	]);
 	// redact anything sensitive before it leaves the server
 	const emailPublic: Record<string, unknown> = { ...email };
@@ -432,7 +468,8 @@ export async function getAllSettings() {
 		role_icons: roleIcons,
 		role_colors: roleColors,
 		avatars: avatarPolicy,
-		security
+		security,
+		bimi
 	};
 }
 

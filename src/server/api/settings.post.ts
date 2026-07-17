@@ -100,7 +100,8 @@ export default defineEventHandler(async (event) => {
 		'ai',
 		'role_icons',
 		'role_colors',
-		'avatars'
+		'avatars',
+		'bimi'
 	] as const) {
 		const value = body[key];
 		if (value && typeof value === 'object') await setJsonSetting(key, value);

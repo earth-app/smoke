@@ -113,7 +113,13 @@ async function cfFetch<T>(token: string, path: string, init: RequestInit = {}): 
 	return (json?.result ?? json) as T;
 }
 
-export type CfDnsRecord = { type: string; name: string; content: string; priority?: number };
+export type CfDnsRecord = {
+	type: string;
+	name: string;
+	content: string;
+	priority?: number;
+	id?: string;
+};
 export type CfZone = { id: string; name: string };
 
 // verify a token works when linking an account
@@ -343,6 +349,151 @@ export async function ensureEmailDnsRecords(
 		}
 	}
 	return { created, skipped };
+}
+
+// create or update a dns record in place (BIMI/DMARC records change content over time, so the
+// create-only ensureEmailDnsRecords isn't enough). looks up an existing record by type+name, PUTs
+// it when found else POSTs a new one
+export async function upsertDnsRecord(
+	token: string,
+	zoneId: string,
+	record: CfDnsRecord
+): Promise<{ action: 'created' | 'updated'; id?: string }> {
+	if (MOCK) return { action: 'created', id: 'mock-record' };
+	let existing: Array<{ id: string }> = [];
+	try {
+		const q = `type=${encodeURIComponent(record.type)}&name=${encodeURIComponent(record.name)}`;
+		existing = await cfFetch(token, `/zones/${zoneId}/dns_records?${q}`, { method: 'GET' });
+	} catch {
+		existing = [];
+	}
+	const match = (Array.isArray(existing) ? existing : [])[0];
+	if (match?.id) {
+		await cfFetch(token, `/zones/${zoneId}/dns_records/${match.id}`, {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(record)
+		});
+		return { action: 'updated', id: match.id };
+	}
+	const created = await cfFetch<{ id?: string }>(token, `/zones/${zoneId}/dns_records`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(record)
+	});
+	return { action: 'created', id: created?.id };
+}
+
+export type DmarcStatus = {
+	present: boolean;
+	policy: 'none' | 'quarantine' | 'reject' | null;
+	pct: number | null;
+	// BIMI requires an enforcing policy (quarantine|reject) at full coverage
+	enforced: boolean;
+	record: string | null;
+};
+
+// pure classifier: is a dmarc TXT strong enough for BIMI? (p=quarantine|reject and pct null-or-100)
+export function parseDmarcRecord(content: string | null): DmarcStatus {
+	if (!content || !/v=DMARC1/i.test(content)) {
+		return { present: false, policy: null, pct: null, enforced: false, record: null };
+	}
+	const policyRaw = content.match(/\bp=\s*(none|quarantine|reject)/i)?.[1]?.toLowerCase();
+	const policy = (policyRaw as DmarcStatus['policy']) ?? null;
+	const pctMatch = content.match(/\bpct=\s*(\d+)/i);
+	const pct = pctMatch ? Number(pctMatch[1]) : null;
+	const enforced =
+		(policy === 'quarantine' || policy === 'reject') && (pct === null || pct === 100);
+	return { present: true, policy, pct, enforced, record: content };
+}
+
+// read the _dmarc.<domain> TXT and classify whether it's strong enough for BIMI display
+export async function getDmarcStatus(
+	token: string,
+	zoneId: string,
+	domain: string
+): Promise<DmarcStatus> {
+	if (MOCK) return parseDmarcRecord('v=DMARC1; p=reject; pct=100');
+	const name = `_dmarc.${domain}`;
+	let records: Array<{ content: string }> = [];
+	try {
+		records = await cfFetch(
+			token,
+			`/zones/${zoneId}/dns_records?type=TXT&name=${encodeURIComponent(name)}`,
+			{ method: 'GET' }
+		);
+	} catch {
+		records = [];
+	}
+	const rec = (Array.isArray(records) ? records : [])
+		.map((r) => r.content)
+		.find((c) => /v=DMARC1/i.test(c));
+	return parseDmarcRecord(rec ?? null);
+}
+
+export type BimiProvision = {
+	domain: string;
+	record: CfDnsRecord;
+	action: 'created' | 'updated';
+	logo_url: string;
+	dmarc: DmarcStatus;
+	dmarc_created: boolean;
+};
+
+// publish default._bimi.<domain> -> our logo url. optionally add a default enforcing DMARC record
+// when none exists (never downgrades or overwrites an owner-set policy)
+export async function provisionBimi(
+	token: string,
+	zoneId: string,
+	domain: string,
+	logoUrl: string,
+	opts?: { vmcUrl?: string; autoDmarc?: boolean }
+): Promise<BimiProvision> {
+	const vmc = opts?.vmcUrl ? ` a=${opts.vmcUrl};` : ' a=;';
+	const record: CfDnsRecord = {
+		type: 'TXT',
+		name: `default._bimi.${domain}`,
+		content: `v=BIMI1; l=${logoUrl};${vmc}`
+	};
+	const { action } = await upsertDnsRecord(token, zoneId, record);
+
+	let dmarc = await getDmarcStatus(token, zoneId, domain);
+	let dmarcCreated = false;
+	if (opts?.autoDmarc && !dmarc.present) {
+		await upsertDnsRecord(token, zoneId, {
+			type: 'TXT',
+			name: `_dmarc.${domain}`,
+			content: 'v=DMARC1; p=quarantine; pct=100;'
+		});
+		dmarcCreated = true;
+		dmarc = await getDmarcStatus(token, zoneId, domain);
+	}
+
+	return { domain, record, action, logo_url: logoUrl, dmarc, dmarc_created: dmarcCreated };
+}
+
+// read back the live default._bimi record for an honest status
+export async function getBimiRecord(
+	token: string,
+	zoneId: string,
+	domain: string
+): Promise<string | null> {
+	if (MOCK) return 'v=BIMI1; l=https://example.com/bimi/logo.svg; a=;';
+	const name = `default._bimi.${domain}`;
+	try {
+		const records = await cfFetch<Array<{ content: string }>>(
+			token,
+			`/zones/${zoneId}/dns_records?type=TXT&name=${encodeURIComponent(name)}`,
+			{ method: 'GET' }
+		);
+		return (
+			(Array.isArray(records) ? records : [])
+				.map((r) => r.content)
+				.find((c) => /v=BIMI1/i.test(c)) ?? null
+		);
+	} catch {
+		return null;
+	}
 }
 
 export async function upsertCatchAllToWorker(
