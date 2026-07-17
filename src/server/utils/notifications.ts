@@ -1,9 +1,15 @@
 import type { Ticket } from '~/shared/types/ticket';
 
 export type TicketNotificationEvent =
-	'message' | 'closed' | 'reopened' | 'archived' | 'pre_delete' | 'deleted';
+	'message' | 'status' | 'closed' | 'reopened' | 'archived' | 'pre_delete' | 'deleted';
 
-type NotifyOpts = { actorId?: string; message?: string; daysLeft?: number };
+type NotifyOpts = {
+	actorId?: string;
+	message?: string;
+	daysLeft?: number;
+	fromStatus?: string;
+	toStatus?: string;
+};
 
 type Audience = 'customer' | 'agent';
 
@@ -19,11 +25,19 @@ function snippet(message?: string): string {
 	return clean.length > 200 ? `${clean.slice(0, 200)}...` : clean;
 }
 
+// humanize a raw status value (work_in_progress -> Work In Progress)
+function statusLabel(status?: string): string {
+	if (!status) return '';
+	return status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function subjectFor(event: TicketNotificationEvent, ticket: Ticket): string {
 	const tag = `Ticket #${ticket.id}`;
 	switch (event) {
 		case 'message':
 			return `New Message on ${tag}: ${ticket.title}`;
+		case 'status':
+			return `${tag} Status Updated: ${ticket.title}`;
 		case 'closed':
 			return `${tag} Closed: ${ticket.title}`;
 		case 'reopened':
@@ -59,6 +73,12 @@ function bodyFor(
 			const quote = snip ? `\n\n"${snip}"` : '';
 			return `There is a new message on ${item}.${quote}\n\n${cta}`;
 		}
+		case 'status': {
+			const to = statusLabel(opts?.toStatus);
+			const from = statusLabel(opts?.fromStatus);
+			const change = from && to ? ` from ${from} to ${to}` : to ? ` to ${to}` : '';
+			return `The status of ${item} has changed${change}.\n\n${cta}`;
+		}
 		case 'closed':
 			return `${Item} has been closed.${isCustomer ? ' If you still need help, reply to this email to reopen it.' : ''}\n\n${cta}`;
 		case 'reopened':
@@ -84,9 +104,12 @@ export async function notifyTicketEvent(
 	opts?: NotifyOpts
 ): Promise<void> {
 	try {
-		// an email-thread ticket already mirrors every reply over smtp; don't double-notify
-		const thread = await kv.get(threadKey(ticket.id), 'json');
-		if (thread != null) return;
+		// an email-thread ticket already mirrors every reply over smtp; skip the message notice for
+		// those. state changes (status/close/reopen/archive) have NO mirror, so they still send
+		if (event === 'message') {
+			const thread = await kv.get(threadKey(ticket.id), 'json');
+			if (thread != null) return;
+		}
 
 		const settings = await getEmailSettings();
 		if (settings.notifications === false) return;
@@ -108,6 +131,13 @@ export async function notifyTicketEvent(
 		for (const assignee of ticket.assignees ?? []) {
 			if (opts?.actorId && assignee.id === opts.actorId) continue;
 			if (assignee.email) recipients.push({ email: assignee.email, audience: 'agent' });
+		}
+
+		// ticket participants (cc'd / forwarded emails) get the customer-facing update too
+		if (!staffOnly) {
+			for (const email of ticket.participants ?? []) {
+				if (email) recipients.push({ email, audience: 'customer' });
+			}
 		}
 
 		// de-dupe by address (case-insensitive); first audience wins
