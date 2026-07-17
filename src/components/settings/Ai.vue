@@ -100,6 +100,7 @@
 				color="primary"
 				icon="mdi:content-save-outline"
 				:loading="saving"
+				:disabled="!loaded"
 				@click="onSave"
 			>
 				Save AI Settings
@@ -110,7 +111,7 @@
 
 <script setup lang="ts">
 const toast = useToast();
-const { settings, save } = useSettings();
+const { settings, loaded, save } = useSettings();
 const { sessionToken } = useAuth();
 
 const DEFAULT_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';

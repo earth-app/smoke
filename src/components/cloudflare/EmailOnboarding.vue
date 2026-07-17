@@ -169,9 +169,13 @@ const { sessionToken } = useAuth();
 const { status: cfStatus } = useCloudflare();
 const { fetchSettings } = useSettings();
 
+const requestFetch = useRequestFetch();
 const phase = ref<Phase>('idle');
 const errorMessage = ref('');
 const result = ref<ProvisionResult | null>(null);
+// current onboarding status fetched on mount so the badge reflects the real state without clicking
+// (otherwise it flashed "Not Configured" on every (re)mount until Set Up Email Sending was run)
+const initialStatus = ref<EmailConfigStatus | null>(null);
 const testZones = ref<{ id: string; name: string }[]>([]);
 const selectedZoneId = ref(props.zoneId || '');
 
@@ -202,11 +206,26 @@ const buttonLabel = computed(() =>
 );
 
 const statusView = computed(() => {
-	const s = result.value?.status;
+	// a fresh run() result wins; otherwise reflect the status fetched on mount
+	const s = result.value?.status ?? initialStatus.value;
 	if (s?.configured) return { tone: 'success' as const, label: 'Configured' };
 	if (s?.needsOnboarding) return { tone: 'warning' as const, label: 'Needs Onboarding' };
 	return { tone: 'neutral' as const, label: 'Not Configured' };
 });
+
+// seed the badge from the live status so navigating back to this tab shows the real state
+async function loadStatus() {
+	try {
+		initialStatus.value = await requestFetch<EmailConfigStatus>('/api/cloudflare/email-status', {
+			cache: 'no-store',
+			credentials: 'include',
+			headers: authHeaders()
+		});
+	} catch {
+		// leave null; the badge falls back to "Not Configured" only when the status truly can't load
+	}
+}
+onMounted(loadStatus);
 
 const successDescription = computed(() => {
 	const s = result.value?.status;

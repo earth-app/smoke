@@ -40,6 +40,7 @@
 				color="primary"
 				icon="mdi:content-save-outline"
 				:loading="saving"
+				:disabled="!loaded"
 				@click="onSave"
 			>
 				Save Audit Settings
@@ -50,7 +51,7 @@
 
 <script setup lang="ts">
 const toast = useToast();
-const { settings, save } = useSettings();
+const { settings, loaded, save } = useSettings();
 
 const form = reactive<{ retention_days: number | null }>({ retention_days: null });
 

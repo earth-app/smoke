@@ -35,6 +35,7 @@
 				color="primary"
 				icon="mdi:content-save-outline"
 				:loading="saving"
+				:disabled="!loaded"
 				@click="onSave"
 			>
 				Save Visibility
@@ -47,7 +48,7 @@
 import { TicketVisibility } from '~/shared/types/ticket';
 
 const toast = useToast();
-const { settings, save } = useSettings();
+const { settings, loaded, save } = useSettings();
 
 type Vis = 'public' | 'internal' | 'private';
 type SourceKey = 'guest' | 'emailed' | 'team';

@@ -57,7 +57,7 @@
 				color="primary"
 				icon="mdi:content-save-outline"
 				:loading="saving"
-				:disabled="!canEditAny"
+				:disabled="!canEditAny || !loaded"
 				@click="onSave"
 				>Save Role Colors</UButton
 			>

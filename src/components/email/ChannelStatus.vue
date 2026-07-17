@@ -41,20 +41,25 @@ type EmailConfigStatus = {
 
 const { settings } = useSettings();
 const { sessionToken } = useAuth();
+const requestFetch = useRequestFetch();
 
 const status = ref<EmailConfigStatus | null>(null);
+// true until the first status resolves; keeps the card from flashing "Not Configured" on (re)mount
+const loading = ref(true);
 
 async function refresh() {
 	try {
 		const headers: Record<string, string> = {};
 		if (sessionToken.value) headers.Authorization = `Bearer ${sessionToken.value}`;
-		status.value = await $fetch<EmailConfigStatus>('/api/cloudflare/email-status', {
+		status.value = await requestFetch<EmailConfigStatus>('/api/cloudflare/email-status', {
 			cache: 'no-store',
 			credentials: 'include',
 			headers
 		});
 	} catch {
 		status.value = null;
+	} finally {
+		loading.value = false;
 	}
 }
 
@@ -67,6 +72,15 @@ const transportLabel = computed(() =>
 
 const view = computed(() => {
 	const s = status.value;
+	// initial load: show a neutral "Checking" state rather than the misleading "Not Configured"
+	if (!s && loading.value) {
+		return {
+			tone: 'neutral' as const,
+			icon: 'mdi:loading',
+			label: 'Checking',
+			detail: 'Checking email configuration...'
+		};
+	}
 	if (s?.configured) {
 		return {
 			tone: 'success' as const,

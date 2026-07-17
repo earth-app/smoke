@@ -154,11 +154,17 @@
 			</div>
 		</section>
 
-		<div class="flex justify-end">
+		<div class="flex items-center justify-end gap-3">
+			<span
+				v-if="!loaded"
+				class="text-xs text-slate-500"
+				>Loading current settings...</span
+			>
 			<UButton
 				color="primary"
 				icon="mdi:content-save-outline"
 				:loading="saving"
+				:disabled="!loaded"
 				@click="onSave"
 			>
 				Save Branding
@@ -169,7 +175,7 @@
 
 <script setup lang="ts">
 const toast = useToast();
-const { settings, save } = useSettings();
+const { settings, loaded, save } = useSettings();
 
 type SocialKey =
 	'website' | 'github' | 'twitter' | 'instagram' | 'discord' | 'linkedin' | 'patreon';

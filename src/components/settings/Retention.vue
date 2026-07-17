@@ -84,6 +84,7 @@
 				color="primary"
 				icon="mdi:content-save-outline"
 				:loading="saving"
+				:disabled="!loaded"
 				@click="onSave"
 			>
 				Save Retention
@@ -94,7 +95,7 @@
 
 <script setup lang="ts">
 const toast = useToast();
-const { settings, save } = useSettings();
+const { settings, loaded, save } = useSettings();
 
 const form = reactive<{
 	archive_days: number | null;

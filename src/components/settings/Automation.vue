@@ -53,6 +53,7 @@
 					color="primary"
 					icon="mdi:content-save-outline"
 					:loading="saving"
+					:disabled="!loaded"
 					@click="onSave"
 					>Save Automation</UButton
 				>
@@ -63,7 +64,7 @@
 
 <script setup lang="ts">
 const toast = useToast();
-const { settings, save } = useSettings();
+const { settings, loaded, save } = useSettings();
 
 const form = reactive<{ identity: 'team' | 'automation'; name: string }>({
 	identity: 'team',

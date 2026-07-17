@@ -45,6 +45,7 @@
 				color="primary"
 				icon="mdi:content-save-outline"
 				:loading="saving"
+				:disabled="!loaded"
 				@click="onSave"
 				>Save Role Icons</UButton
 			>
