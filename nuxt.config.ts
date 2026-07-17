@@ -6,13 +6,13 @@ const E2E_BUILD = process.env.NUXT_PUBLIC_E2E === '1';
 
 export default defineNuxtConfig({
 	site: {
-		url: process.env.NUXT_PUBLIC_SITE_URL || 'https://smoke.pages.dev',
-		name: process.env.NUXT_PUBLIC_SITE_NAME || 'Smoke'
+		url: process.env.NUXT_PUBLIC_SITE_URL || 'https://support.earth-app.com',
+		name: process.env.NUXT_PUBLIC_SITE_NAME || 'The Earth App'
 	},
 	schemaOrg: {
 		identity: {
 			type: 'Organization',
-			name: process.env.NUXT_PUBLIC_SITE_NAME || 'Smoke',
+			name: process.env.NUXT_PUBLIC_SITE_NAME || 'The Earth App',
 			logo: '/favicon.png'
 		}
 	},
