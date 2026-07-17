@@ -1,5 +1,26 @@
 import type { TicketActor, TicketEvent, TicketMessage } from '~/shared/types/ticket';
 
+export function applyOptimisticPatch(current: Ticket, body: TicketPatchInput): Ticket {
+	const next: Ticket = { ...current };
+	if (body.title !== undefined) next.title = body.title;
+	if (body.description !== undefined) next.description = body.description;
+	if (body.status !== undefined) next.status = body.status;
+	if (body.priority !== undefined) next.priority = body.priority;
+	if (body.visibility !== undefined) next.visibility = body.visibility;
+	if (body.private !== undefined) next.private = body.private;
+	if (body.color !== undefined) next.color = body.color;
+	if (body.icon !== undefined) next.icon = body.icon;
+	if (body.locked !== undefined) next.locked = body.locked;
+	if (body.archived !== undefined) next.archived = body.archived;
+	if (body.labels !== undefined) next.labels = body.labels;
+	if (body.custom_fields !== undefined) next.custom_fields = body.custom_fields;
+	if (body.project_ids !== undefined) {
+		next.project_ids = body.project_ids;
+		next.project_id = body.project_ids[0] ?? null;
+	}
+	return next;
+}
+
 export type TicketViewOrder = 'asc' | 'desc';
 export type TicketViewPrefs = { order: TicketViewOrder; compact: boolean };
 
