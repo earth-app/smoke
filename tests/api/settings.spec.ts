@@ -110,6 +110,18 @@ describe('POST /api/settings', () => {
 		expect(transport?.auth?.username).toBe('acme');
 		expect(transport?.auth?.password).toBe('plaintext-pw');
 	});
+
+	it('getAllSettings is cached but a settings write busts it', async () => {
+		getRuntime();
+		const utils = await import('#server-utils');
+
+		await utils.setJsonSetting('branding', { v: 1 });
+		expect(((await utils.getAllSettings()) as any).branding).toEqual({ v: 1 });
+
+		// a second write must be reflected immediately; a cache without invalidation would serve v:1
+		await utils.setJsonSetting('branding', { v: 2 });
+		expect(((await utils.getAllSettings()) as any).branding).toEqual({ v: 2 });
+	});
 });
 
 describe('POST /api/settings inbound poll', () => {
