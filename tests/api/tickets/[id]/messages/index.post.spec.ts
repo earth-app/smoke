@@ -10,7 +10,8 @@ import {
 	seedAgent,
 	seedCustomer,
 	seedTicket,
-	seedUser
+	seedUser,
+	useSmtpTransport
 } from '../../../route-runtime';
 
 // edgeport opens real TCP sockets; mock it so the outbound mirror is observable without a network
@@ -88,6 +89,8 @@ describe('POST /api/tickets/:id/messages', () => {
 	it('mirrors the agent reply to the customer for an email-thread ticket', async () => {
 		const runtime = getRuntime();
 		const utils = await import('#server-utils');
+		// the mirror goes over edgeport only for a custom smtp transport (cloudflare uses the rest api)
+		await useSmtpTransport(runtime);
 		const sendMock = edgeportSend as unknown as ReturnType<typeof vi.fn>;
 		sendMock.mockClear();
 

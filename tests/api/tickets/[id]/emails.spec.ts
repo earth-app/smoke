@@ -11,7 +11,8 @@ import {
 	seedCustomer,
 	seedManager,
 	seedTicket,
-	seedUser
+	seedUser,
+	useSmtpTransport
 } from '../../route-runtime';
 
 // edgeport opens real sockets; mock it so the invite path is observable without a network
@@ -35,6 +36,8 @@ describe('POST /api/tickets/:id/emails', () => {
 	it('adds a participant and emails them an access invite (AddEmail)', async () => {
 		const { rt, ticket } = await seedOwnedTicket();
 		const manager = await seedManager(rt);
+		// the invite goes over edgeport only for a custom smtp transport (cloudflare uses the rest api)
+		await useSmtpTransport(rt);
 		const sendMock = edgeportSend as unknown as ReturnType<typeof vi.fn>;
 		sendMock.mockClear();
 

@@ -302,6 +302,22 @@ export function getRuntime(): RouteRuntime {
 	return runtime;
 }
 
+export async function useSmtpTransport(rt: RouteRuntime): Promise<void> {
+	const utils = await import('#server-utils');
+	await utils.setJsonSetting('email', {
+		transport: 'smtp',
+		support_email: 'support@smoke.example.com',
+		smtp: {
+			host: 'smtp.test',
+			port: 465,
+			tls: 'implicit',
+			username: 'u',
+			from: 'support@smoke.example.com'
+		}
+	});
+	void rt;
+}
+
 export function eventFor(env: typeof TEST_ENV, token?: string) {
 	return {
 		node: { req: { headers: token ? { authorization: `Bearer ${token}` } : {} } },

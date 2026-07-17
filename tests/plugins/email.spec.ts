@@ -1,8 +1,8 @@
 import { send as edgeportSend } from 'edgeport/smtp';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TicketVisibility } from '~/shared/types/ticket';
 import { Permission } from '~/shared/types/user';
-import { getRuntime } from '../api/route-runtime';
+import { getRuntime, useSmtpTransport } from '../api/route-runtime';
 
 // emailed tickets default to private now; list as a privileged viewer to see them in these specs
 const PRIV_VIEWER = { id: 'sys', permissions: [Permission.ViewPrivateTickets] } as any;
@@ -265,7 +265,13 @@ describe('cloudflare:email plugin', () => {
 	});
 });
 
-describe('sendTicketEmailReply (Email Service via edgeport)', () => {
+describe('sendTicketEmailReply (custom SMTP via edgeport)', () => {
+	// the cloudflare transport now sends via the REST api (fetch); these edgeport-path tests opt into
+	// a custom smtp transport
+	beforeEach(async () => {
+		await useSmtpTransport(getRuntime());
+	});
+
 	it('sends a threaded reply to any customer over edgeport SMTP', async () => {
 		const runtime = getRuntime();
 		const utils = await import('#server-utils');
@@ -296,13 +302,13 @@ describe('sendTicketEmailReply (Email Service via edgeport)', () => {
 		const sendMock = edgeportSend as unknown as ReturnType<typeof vi.fn>;
 		expect(sendMock).toHaveBeenCalledTimes(1);
 		const call = sendMock.mock.calls[0]![0];
-		expect(call.hostname).toBe('smtp.mx.cloudflare.net');
+		// custom smtp transport (useSmtpTransport); the cloudflare transport is covered by the REST test
+		expect(call.hostname).toBe('smtp.test');
 		expect(call.tls).toBe('implicit');
-		expect(call.auth.username).toBe('api_token');
-		expect(call.auth.password).toBe('cf-api-token');
+		expect(call.auth.username).toBe('u');
 		expect(call.to).toBe(email);
 		expect(call.text).toBe('can you send a screenshot?');
-		// clean onboarded From, alias Reply-To, threaded against the customer's last message
+		// clean From, alias Reply-To, threaded against the customer's last message
 		expect(call.from).toContain('support@smoke.example.com');
 		expect(call.headers['Reply-To']).toBe('support+t' + ticket.id + '@smoke.example.com');
 		expect(call.headers['In-Reply-To']).toBe('<cust-1@example.com>');
@@ -529,5 +535,46 @@ describe('automated / bounce inbound', () => {
 		expect(isAutomatedInbound({ from: 'alice@example.com', headers: bulk })).toBe(true);
 
 		expect(isAutomatedInbound({ from: 'alice@example.com', headers: new Headers() })).toBe(false);
+	});
+});
+
+describe('sendEmail cloudflare transport (REST api)', () => {
+	// workers can't tcp-connect to smtp.mx.cloudflare.net, so the cloudflare transport sends via the
+	// Email Sending REST api (a plain fetch), NOT edgeport
+	it('posts to the Email Sending REST api with the reply alias baked into From', async () => {
+		const runtime = getRuntime();
+		const utils = await import('#server-utils');
+		await utils.setJsonSetting('cloudflare', { account_id: 'acct-rest' });
+		await utils.setJsonSetting('email', {
+			transport: 'cloudflare',
+			support_email: 'support@smoke.example.com'
+		});
+
+		const calls: Array<{ url: string; body: any }> = [];
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (url: unknown, init: any) => {
+				calls.push({ url: String(url), body: JSON.parse(init.body as string) });
+				return new Response(JSON.stringify({ success: true, result: {} }), { status: 200 });
+			})
+		);
+		try {
+			const ok = await utils.sendEmail(runtime.env, {
+				fromName: 'Agent Ada',
+				to: 'cust@example.com',
+				replyTo: 'support+t5@smoke.example.com',
+				subject: 'Re: Help',
+				text: 'here you go'
+			});
+			expect(ok).toBe(true);
+			expect(calls).toHaveLength(1);
+			expect(calls[0]!.url).toContain('/accounts/acct-rest/email/sending/send');
+			// the reply alias must be the From so a customer reply threads back to the ticket
+			expect(calls[0]!.body.from).toBe('Agent Ada <support+t5@smoke.example.com>');
+			expect(calls[0]!.body.to).toBe('cust@example.com');
+			expect(calls[0]!.body.subject).toBe('Re: Help');
+		} finally {
+			vi.unstubAllGlobals();
+		}
 	});
 });

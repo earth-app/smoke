@@ -1,6 +1,12 @@
 import { send as edgeportSend } from 'edgeport/smtp';
-import { describe, expect, it, vi } from 'vitest';
-import { getRuntime, seedCustomer, seedManager, seedTicket } from '../api/route-runtime';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+	getRuntime,
+	seedCustomer,
+	seedManager,
+	seedTicket,
+	useSmtpTransport
+} from '../api/route-runtime';
 
 // edgeport opens real TCP sockets; mock it so the outbound path is observable without a network
 vi.mock('edgeport/smtp', () => ({
@@ -76,6 +82,12 @@ function sentRecipients(sendMock: ReturnType<typeof vi.fn>): string[] {
 }
 
 describe('cloudflare:email agent bridge', () => {
+	// outbound mirror/forward goes over edgeport only for a custom smtp transport (cloudflare uses the
+	// rest api now), so configure smtp for these send-path assertions
+	beforeEach(async () => {
+		await useSmtpTransport(getRuntime());
+	});
+
 	it('forwards a customer message to the assignee mailbox', async () => {
 		const runtime = getRuntime();
 		const utils = await import('#server-utils');
