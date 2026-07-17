@@ -50,6 +50,7 @@
 				:customer="customer"
 				:labels="labels"
 				:users="users"
+				:saving="patching"
 				@patch="onPatch"
 				@labels-changed="listLabels()"
 			/>
@@ -153,7 +154,10 @@ async function onSend(payload: {
 	}
 }
 
+const patching = ref(false);
+
 async function onPatch(body: TicketPatchInput) {
+	patching.value = true;
 	try {
 		await patchTicket(body);
 		toast.add({
@@ -171,6 +175,8 @@ async function onPatch(body: TicketPatchInput) {
 			color: 'error',
 			duration: 4000
 		});
+	} finally {
+		patching.value = false;
 	}
 }
 </script>

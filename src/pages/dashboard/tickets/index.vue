@@ -178,7 +178,7 @@
 useSeoMeta({ title: 'Tickets' });
 import type { ContextMenuItem } from '@nuxt/ui';
 import type { Ticket } from '~/shared/types/ticket';
-import { TicketPriority, TicketStatus } from '~/shared/types/ticket';
+import { OPEN_STATUSES, TicketPriority, TicketStatus } from '~/shared/types/ticket';
 import { Permission } from '~/shared/types/user';
 import type { QueryParameters } from '~/utils/request';
 
@@ -192,7 +192,8 @@ const { can, isAdmin, user } = useAuth();
 const canCreate = computed(() => isAdmin.value || can(Permission.CreateTicket));
 
 const search = ref((route.query.search as string) || '');
-const statusFilter = ref((route.query.status as string) || 'all');
+// default to the github-issues "open" view: non-closed, non-archived
+const statusFilter = ref((route.query.status as string) || 'active');
 const priorityFilter = ref((route.query.priority as string) || 'all');
 // saved view + project filter
 const view = ref((route.query.view as string) || 'all');
@@ -213,19 +214,32 @@ const projectItems = computed(() => [
 ]);
 
 const statusItems = [
+	{ label: 'Open', value: 'active', icon: 'mdi:circle-outline' },
 	{ label: 'All Statuses', value: 'all', icon: 'mdi:filter-variant' },
-	...statusSelectItems()
+	...statusSelectItems(),
+	{ label: 'Archived', value: 'archived', icon: 'mdi:archive-outline' }
 ];
 const priorityItems = [
 	{ label: 'All Priorities', value: 'all', icon: 'mdi:filter-variant' },
 	...prioritySelectItems()
 ];
 
-// only the free-text search + sort run server-side; the view/project/status/priority
-// filters are applied over the fetched page so they compose without extra round-trips
+// search + status/archived + sort run server-side (so the default "open" view isn't capped to one
+// page); the view/project/priority filters compose over the fetched page without extra round-trips
 const query = computed<QueryParameters>(() => {
 	const params: QueryParameters = { sort: 'updated_at', sort_direction: 'desc', limit: 100 };
 	if (search.value.trim()) params.search = search.value.trim();
+	if (statusFilter.value === 'active') {
+		params.status = OPEN_STATUSES.join(',');
+		params.archived = 'exclude';
+	} else if (statusFilter.value === 'archived') {
+		params.archived = 'only';
+	} else if (statusFilter.value !== 'all') {
+		params.status = statusFilter.value;
+		params.archived = 'exclude';
+	} else {
+		params.archived = 'exclude';
+	}
 	return params;
 });
 
@@ -233,7 +247,6 @@ const { tickets, pending, listTickets } = useTickets(query);
 
 const visibleTickets = computed<Ticket[]>(() => {
 	return tickets.value.filter((ticket) => {
-		if (statusFilter.value !== 'all' && ticket.status !== statusFilter.value) return false;
 		if (priorityFilter.value !== 'all' && ticket.priority !== priorityFilter.value) return false;
 
 		if (view.value === 'assigned') {
@@ -260,19 +273,19 @@ const visibleTickets = computed<Ticket[]>(() => {
 const hasFilters = computed(
 	() =>
 		!!search.value.trim() ||
-		statusFilter.value !== 'all' ||
+		statusFilter.value !== 'active' ||
 		priorityFilter.value !== 'all' ||
 		view.value !== 'all' ||
 		projectFilter.value !== 'all'
 );
 
-// keep filters in the url so views are shareable
+// keep filters in the url so views are shareable ('active' is the default, so it stays out of the url)
 watch(
 	[search, statusFilter, priorityFilter, view, projectFilter],
 	() => {
 		const q: Record<string, string> = {};
 		if (search.value.trim()) q.search = search.value.trim();
-		if (statusFilter.value !== 'all') q.status = statusFilter.value;
+		if (statusFilter.value !== 'active') q.status = statusFilter.value;
 		if (priorityFilter.value !== 'all') q.priority = priorityFilter.value;
 		if (view.value !== 'all') q.view = view.value;
 		if (projectFilter.value !== 'all') q.project = projectFilter.value;
@@ -283,7 +296,7 @@ watch(
 
 function clearFilters() {
 	search.value = '';
-	statusFilter.value = 'all';
+	statusFilter.value = 'active';
 	priorityFilter.value = 'all';
 	view.value = 'all';
 	projectFilter.value = 'all';
