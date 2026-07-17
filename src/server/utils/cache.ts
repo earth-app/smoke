@@ -1,13 +1,3 @@
-// two-tier read-through cache (mirrors mylora/nuxtpress): L1 in-isolate memory + L2 the kv binding
-//
-// why L1: on a low-traffic worker a kv cold read is itself ~100-300ms, so a warm isolate serving a
-// burst of reads should pay zero i/o. the map gives that. L2 keeps state across isolates + deploys.
-//
-// cross-isolate caveat: clearCache only reaches L2 (global) + the current isolate's L1; other isolates
-// keep a stale L1 up to its expiry. smoke's L2 ttls run long (getUserById is 4h), so L1 is capped at
-// L1_TTL_CAP_MS independent of the L2 ttl -- a warm isolate still skips i/o, but post-write staleness on
-// a different isolate is bounded to the cap, not the full 4h (L2 is busted immediately, everywhere).
-
 type Wrapped<T> = { v: T; e: number };
 
 const L1_MAX = 2000;
@@ -139,6 +129,23 @@ export const CUSTOMER_LIST_PREFIX = `${PREFIX}customer:list:`;
 export const ticketIdKey = (id: number) => `${PREFIX}ticket_id:${id}`;
 export const TICKET_LIST_PREFIX = `${PREFIX}tickets:`;
 export const ANALYTICS_PREFIX = `${PREFIX}analytics:`;
+
+// hot-path singletons read on nearly every page/request; short-lived, busted on the matching write
+export const SETTINGS_KEY = `${PREFIX}settings:all`;
+export const SETUP_STATUS_KEY = `${PREFIX}setup:status`;
+export const OWNER_USER_KEY = `${PREFIX}owner_user`;
+
+export async function invalidateSettings(): Promise<void> {
+	await clearCache(SETTINGS_KEY);
+}
+
+export async function invalidateSetupStatus(): Promise<void> {
+	await clearCache(SETUP_STATUS_KEY);
+}
+
+export async function invalidateOwnerUser(): Promise<void> {
+	await clearCache(OWNER_USER_KEY);
+}
 
 // role/perm/profile/email changed -> the session hot path + any lookup by the old keys must re-read
 export async function invalidateUser(
