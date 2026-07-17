@@ -44,6 +44,29 @@
 				/>
 			</UFormField>
 
+			<UFormField
+				label="Verified Mark Certificate (VMC) URL"
+				size="sm"
+				help="HTTPS link to your VMC/CMC .pem. Leave blank for self-asserted BIMI."
+			>
+				<UInput
+					v-model="vmcUrl"
+					type="url"
+					placeholder="https://example.com/vmc.pem"
+					:disabled="pending"
+					class="w-full"
+				/>
+			</UFormField>
+
+			<UAlert
+				v-if="!vmcUrl.trim()"
+				color="info"
+				variant="subtle"
+				icon="mdi:certificate-outline"
+				title="A VMC is Needed for Most Inboxes"
+				description="Without a Verified Mark Certificate, Gmail and most providers will not display your logo. Yahoo, Apple Mail, and Fastmail show self-asserted BIMI (no certificate) - but expect it not to appear in Gmail until you add a VMC above."
+			/>
+
 			<UCheckbox
 				v-model="autoDmarc"
 				label="Add a Default DMARC Policy if Missing"
@@ -179,6 +202,8 @@ type BimiStatus = {
 	configured: boolean;
 	needs_link?: boolean;
 	needs_dmarc?: boolean;
+	has_vmc?: boolean;
+	vmc_url?: string | null;
 	domain: string;
 	logo_url: string;
 	record: string | null;
@@ -205,6 +230,7 @@ const status = ref<BimiStatus | null>(null);
 const result = ref<ProvisionResult | null>(null);
 const selectedZoneId = ref('');
 const autoDmarc = ref(false);
+const vmcUrl = ref('');
 
 const pending = computed(() => phase.value === 'provisioning');
 
@@ -267,6 +293,8 @@ async function loadStatus() {
 			credentials: 'include',
 			headers: authHeaders()
 		});
+		// prefill the vmc field from the live record's a= tag (unless the user is mid-edit)
+		if (status.value?.vmc_url && !vmcUrl.value) vmcUrl.value = status.value.vmc_url;
 	} catch {
 		// leave null; the badge falls back to "Not Configured"
 	}
@@ -290,7 +318,11 @@ async function run() {
 			method: 'POST',
 			credentials: 'include',
 			headers: authHeaders(),
-			body: { zone_id: selectedZoneId.value || undefined, auto_dmarc: autoDmarc.value }
+			body: {
+				zone_id: selectedZoneId.value || undefined,
+				auto_dmarc: autoDmarc.value,
+				vmc_url: vmcUrl.value.trim() || undefined
+			}
 		});
 		phase.value = 'success';
 		await loadStatus();

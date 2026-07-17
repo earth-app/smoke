@@ -126,6 +126,18 @@ export function fallbackBimiSvg(
 	return `<svg xmlns="http://www.w3.org/2000/svg" version="1.2" baseProfile="tiny-ps" viewBox="0 0 24 24"><title>${title}</title>${bg}<circle cx="12" cy="12" r="7" ${fillAttrs}/></svg>`;
 }
 
+// pull the l= (logo) and a= (vmc/cmc cert) values out of a v=BIMI1 record; an empty a= tag -> null
+export function parseBimiRecord(content: string | null): {
+	logo: string | null;
+	vmc: string | null;
+} {
+	if (!content) return { logo: null, vmc: null };
+	const logo = content.match(/\bl=\s*([^;\s]+)/i)?.[1] ?? null;
+	const vmcRaw = content.match(/\ba=\s*([^;\s]+)/i)?.[1] ?? null;
+	const vmc = vmcRaw && /^https?:\/\//i.test(vmcRaw) ? vmcRaw : null;
+	return { logo, vmc };
+}
+
 // fetch the raw svg source for an iconify icon id (e.g. mdi:earth); null on invalid id / fetch failure
 export async function fetchIconSvgSource(iconId: string): Promise<string | null> {
 	if (!isIconifyId(iconId)) return null;

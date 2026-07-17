@@ -11,7 +11,10 @@ const body = z.object({
 	token: z.string().optional(),
 	account_id: z.string().optional(),
 	zone_id: z.string().optional(),
-	auto_dmarc: z.boolean().optional()
+	auto_dmarc: z.boolean().optional(),
+	// optional https url to a Verified Mark Certificate (.pem); baked into the record's a= tag. empty
+	// = self-asserted BIMI (a=;) which many inboxes (notably gmail) won't display
+	vmc_url: z.string().url().optional()
 });
 
 export default defineEventHandler(async (event) => {
@@ -71,6 +74,7 @@ export default defineEventHandler(async (event) => {
 	let provision;
 	try {
 		provision = await provisionBimi(token, zoneId, domain, logoUrl, {
+			vmcUrl: input.vmc_url?.trim() || undefined,
 			autoDmarc: input.auto_dmarc === true
 		});
 	} catch (error) {

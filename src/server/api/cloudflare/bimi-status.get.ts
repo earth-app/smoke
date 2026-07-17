@@ -45,12 +45,17 @@ export default defineEventHandler(async (event) => {
 		getDmarcStatus(token, settings.zone_id, domain).catch(() => null)
 	]);
 
+	const vmcUrl = parseBimiRecord(record).vmc;
+
 	return {
 		configured: Boolean(record) && Boolean(dmarc?.enforced),
 		needs_link: false,
 		needs_zone: false,
 		needs_domain: false,
 		needs_dmarc: !dmarc?.enforced,
+		// most inboxes (gmail) need a vmc to actually render the logo
+		has_vmc: Boolean(vmcUrl),
+		vmc_url: vmcUrl,
 		domain,
 		logo_url: logoUrl,
 		record,
