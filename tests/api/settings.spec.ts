@@ -305,3 +305,23 @@ describe('POST /api/settings/test-email', () => {
 		expect(call.hostname).toBe('smtp.acme.test');
 	});
 });
+
+describe('getEmailConfig cloudflare token resolution', () => {
+	it('resolves the sealed (linked) cloudflare token, not just the env token', async () => {
+		const runtime = getRuntime();
+		const utils = await import('#server-utils');
+
+		const sealed = await utils.sealSecret('linked-cf-token-xyz', runtime.env.MASTER_KEY);
+		await (globalThis as any).kv.set('smoke:setting:cloudflare_token', JSON.stringify(sealed));
+		await utils.setJsonSetting('email', {
+			transport: 'cloudflare',
+			support_email: 'help@corp.com'
+		});
+
+		const cfg = await utils.getEmailConfig(runtime.env);
+		expect(cfg).not.toBeNull();
+		// the sealed token wins over the env token (TEST_ENV.CF_API_TOKEN = 'cf-api-token')
+		expect(cfg?.auth?.password).toBe('linked-cf-token-xyz');
+		expect(await utils.isEmailConfigured(runtime.env)).toBe(true);
+	});
+});
