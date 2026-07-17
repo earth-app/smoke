@@ -159,6 +159,9 @@ export const useTicketStore = defineStore('ticket', () => {
 	};
 
 	const patchTicket = async (id: number, body: TicketPatchInput): Promise<Ticket> => {
+		const previous = cache.get(id);
+		if (previous) set(applyOptimisticPatch(previous, body));
+
 		try {
 			const ticket = await requestFetch<Ticket>(`/api/tickets/${id}`, {
 				method: 'PATCH',
@@ -169,6 +172,9 @@ export const useTicketStore = defineStore('ticket', () => {
 			set(ticket);
 			return ticket;
 		} catch (error) {
+			// roll back the optimistic write so the ui doesn't show an unsaved value
+			if (previous) set(previous);
+
 			console.error(`Failed to patch ticket "${id}":`, error);
 			throw error;
 		}
