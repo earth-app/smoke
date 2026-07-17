@@ -524,6 +524,93 @@ function senderFromName(identity: SenderIdentity | undefined, agentName?: string
 // stamps our own outbound so a polled mailbox that receives sent copies never re-ingests it
 export const OUTBOUND_MARKER_HEADER = 'X-Smoke-Outbound';
 
+export type OutboundMail = {
+	// display name only; the From address comes from the resolved transport (support addr / smtp from)
+	fromName?: string;
+	to: string | string[];
+	cc?: string[];
+	// reply alias: an smtp Reply-To header, or (cloudflare rest) baked into the From so replies thread
+	replyTo?: string;
+	subject: string;
+	text: string;
+	html?: string;
+	// extra rfc822 headers (In-Reply-To/References) for smtp threading; the cloudflare rest api has no
+	// arbitrary-header field, so it threads via the reply alias in From instead
+	headers?: Record<string, string>;
+	attachments?: Array<{ filename: string; content: Uint8Array; contentType?: string }>;
+};
+
+function transportFromAddress(transport: { from: string }): string {
+	return transport.from.match(/<([^>]+)>/)?.[1] ?? transport.from;
+}
+
+// cloudflare email sending REST api: a plain fetch to api.cloudflare.com (workers CANNOT tcp-connect
+// to smtp.mx.cloudflare.net -- it's a cloudflare IP and the runtime blocks outbound tcp to those)
+async function sendViaCloudflareEmail(
+	token: string,
+	accountId: string,
+	from: string,
+	mail: OutboundMail
+): Promise<void> {
+	const body: Record<string, unknown> = {
+		from,
+		to: mail.to,
+		subject: mail.subject,
+		text: mail.text
+	};
+	if (mail.html) body.html = mail.html;
+	if (mail.cc?.length) body.cc = mail.cc;
+	const res = await fetch(
+		`https://api.cloudflare.com/client/v4/accounts/${accountId}/email/sending/send`,
+		{
+			method: 'POST',
+			headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+			body: JSON.stringify(body)
+		}
+	);
+	if (!res.ok) {
+		const detail = await res.text().catch(() => '');
+		throw new Error(`Cloudflare Email Sending API ${res.status}: ${detail || res.statusText}`);
+	}
+}
+
+export async function sendEmail(env: any, mail: OutboundMail): Promise<boolean> {
+	const transport = await getEmailConfig(env);
+	if (!transport) return false;
+	const fromName = mail.fromName ?? 'Support';
+
+	if (transport.provider === 'cloudflare') {
+		const token = transport.auth?.password ?? '';
+		if (!token || !transport.accountId) return false;
+		// the reply alias becomes the From address so a customer reply routes back to the ticket
+		const fromAddress = mail.replyTo || transportFromAddress(transport);
+		await sendViaCloudflareEmail(token, transport.accountId, `${fromName} <${fromAddress}>`, mail);
+		return true;
+	}
+
+	const headers: Record<string, string> = {
+		...(mail.headers ?? {}),
+		[OUTBOUND_MARKER_HEADER]: '1'
+	};
+	if (mail.replyTo) headers['Reply-To'] = mail.replyTo;
+	const { send } = await import('edgeport/smtp');
+	await send({
+		hostname: transport.hostname,
+		port: transport.port,
+		tls: transport.tls,
+		auth: transport.auth,
+		from: `${fromName} <${transportFromAddress(transport)}>`,
+		to: mail.to,
+		cc: mail.cc,
+		subject: mail.subject,
+		text: mail.text,
+		html: mail.html,
+		headers,
+		attachments: mail.attachments
+	});
+	return true;
+}
+
 // deliver an agent's reply (with any attachments) to the customer via the resolved transport
 export async function sendTicketEmailReply(
 	ticketId: number,
@@ -554,18 +641,14 @@ export async function sendTicketEmailReply(
 	const alias = buildReplyAlias(base, ticketId);
 	const subject = replySubject(thread.subject || ticket.title);
 
-	const headers: Record<string, string> = { 'Reply-To': alias, [OUTBOUND_MARKER_HEADER]: '1' };
+	// threading headers for the smtp path; the cloudflare rest path threads via the reply alias in From
+	const headers: Record<string, string> = {};
 	if (thread.last_message_id) {
 		headers['In-Reply-To'] = thread.last_message_id;
 		headers['References'] = capReferences([...thread.references, thread.last_message_id]).join(' ');
 	} else if (thread.references.length > 0) {
 		headers['References'] = thread.references.join(' ');
 	}
-
-	// override the transport display-name when replying as a named agent
-	const fromName = senderFromName(options?.identity, options?.agentName);
-	const fromAddress = transport.from.match(/<([^>]+)>/)?.[1] ?? transport.from;
-	const from = `${fromName} <${fromAddress}>`;
 
 	// keep every participant copied on the thread, minus the primary customer + the sender
 	const primary = (thread.customer_email ?? '').trim().toLowerCase();
@@ -578,22 +661,16 @@ export async function sendTicketEmailReply(
 	}
 	const cc = ccSet.size > 0 ? [...ccSet] : undefined;
 
-	const { send } = await import('edgeport/smtp');
-	await send({
-		hostname: transport.hostname,
-		port: transport.port,
-		tls: transport.tls,
-		auth: transport.auth,
-		from,
+	return await sendEmail(env, {
+		fromName: senderFromName(options?.identity, options?.agentName),
 		to: thread.customer_email,
 		cc,
+		replyTo: alias,
 		subject,
 		text: body,
 		headers,
 		attachments: toEdgeportAttachments(attachments)
 	});
-
-	return true;
 }
 
 // send a standalone email to a customer (e.g. a customer.created welcome from a flow); no thread
@@ -604,22 +681,7 @@ export async function sendCustomerEmail(
 	env: any
 ): Promise<boolean> {
 	if (!to || !to.trim()) return false;
-	const transport = await getEmailConfig(env);
-	if (!transport) return false;
-
-	const { send } = await import('edgeport/smtp');
-	await send({
-		hostname: transport.hostname,
-		port: transport.port,
-		tls: transport.tls,
-		auth: transport.auth,
-		from: transport.from,
-		to: to.trim(),
-		subject,
-		text: body,
-		headers: { [OUTBOUND_MARKER_HEADER]: '1' }
-	});
-	return true;
+	return await sendEmail(env, { to: to.trim(), subject, text: body });
 }
 
 // email a newly-added participant their access invite: the status magic-link + portal login +
@@ -657,19 +719,12 @@ export async function sendTicketAccessInvite(
 	const base = (await supportAddress(env)) || transport.from.replace(/^.*<|>.*$/g, '');
 	const alias = buildReplyAlias(base, ticketId);
 
-	const { send } = await import('edgeport/smtp');
-	await send({
-		hostname: transport.hostname,
-		port: transport.port,
-		tls: transport.tls,
-		auth: transport.auth,
-		from: transport.from,
+	return await sendEmail(env, {
 		to,
+		replyTo: alias,
 		subject: replySubject(subject),
-		text: lines.join('\n'),
-		headers: { 'Reply-To': alias, [OUTBOUND_MARKER_HEADER]: '1' }
+		text: lines.join('\n')
 	});
-	return true;
 }
 
 // #endregion
@@ -767,21 +822,14 @@ export async function forwardToAgents(
 
 	const base = (await supportAddress(env)) || transport.from.replace(/^.*<|>.*$/g, '');
 	const alias = buildReplyAlias(base, ticketId);
-	const fromAddress = transport.from.match(/<([^>]+)>/)?.[1] ?? transport.from;
 	const subject = replySubject(parsed.subject);
 	const text = `New customer message on ticket #${ticketId} from ${parsed.name || parsed.from}:\n\n${parsed.text}\n\nReply to this email to respond to the customer.`;
 
-	const { send } = await import('edgeport/smtp');
-	await send({
-		hostname: transport.hostname,
-		port: transport.port,
-		tls: transport.tls,
-		auth: transport.auth,
-		from: `Support <${fromAddress}>`,
+	await sendEmail(env, {
 		to: recipients,
+		replyTo: alias,
 		subject,
-		text,
-		headers: { 'Reply-To': alias, [OUTBOUND_MARKER_HEADER]: '1' }
+		text
 	});
 }
 

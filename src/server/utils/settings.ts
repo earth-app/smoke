@@ -144,13 +144,18 @@ export type AvatarPolicy = {
 	agent_can_upload: boolean;
 };
 
-// resolved outbound transport the email sender uses
+// resolved outbound transport the email sender uses. `provider` picks the send mechanism:
+// 'smtp' = edgeport over TCP (custom/external hosts); 'cloudflare' = the Email Sending REST api
+// (workers can't tcp-connect to smtp.mx.cloudflare.net, a cloudflare IP)
 export type ResolvedTransport = {
+	provider: 'cloudflare' | 'smtp';
 	hostname: string;
 	port: number;
 	tls: SmtpTlsMode;
 	auth?: { username: string; password: string; mechanism?: 'PLAIN' | 'LOGIN' };
 	from: string;
+	// cloudflare rest send needs the account id (resolved alongside the token)
+	accountId?: string;
 };
 
 type SealedSecret = {
@@ -441,6 +446,7 @@ function envSmtpOverride(env: any): ResolvedTransport | null {
 	const from = env?.SMTP_FROM || env?.SUPPORT_EMAIL || `support@${host}`;
 	const username = env?.SMTP_USER;
 	return {
+		provider: 'smtp',
 		hostname: host,
 		port: env?.SMTP_PORT ? Number(env.SMTP_PORT) : 587,
 		tls: (env?.SMTP_TLS as SmtpTlsMode) || 'starttls',
@@ -482,6 +488,7 @@ export async function getEmailConfig(env: any): Promise<ResolvedTransport | null
 			.catch(() => null);
 		const password = sealed ? await openSecret(sealed, masterKey).catch(() => '') : '';
 		return {
+			provider: 'smtp',
 			hostname: email.smtp.host,
 			port: email.smtp.port,
 			tls: email.smtp.tls,
@@ -498,12 +505,15 @@ export async function getEmailConfig(env: any): Promise<ResolvedTransport | null
 	const token = await resolveCloudflareToken(env);
 	const support = email.support_email || env?.SUPPORT_EMAIL;
 	if (token && support) {
+		const cf = await getCloudflareSettings();
 		return {
+			provider: 'cloudflare',
 			hostname: 'smtp.mx.cloudflare.net',
 			port: 465,
 			tls: 'implicit',
 			auth: { username: 'api_token', password: token, mechanism: 'PLAIN' },
-			from: `Support <${support}>`
+			from: `Support <${support}>`,
+			accountId: cf.account_id
 		};
 	}
 

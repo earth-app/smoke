@@ -16,19 +16,13 @@ export default defineEventHandler(async (event) => {
 	const env = event.context.cloudflare.env;
 	const body = await readValidatedBody(event, bodySchema.parse);
 
-	const transport = await getEmailConfig(env);
-	if (!transport) {
+	if (!(await getEmailConfig(env))) {
 		throw createError({ statusCode: 400, message: 'Email Is Not Configured' });
 	}
 
-	const { send } = await import('edgeport/smtp');
 	try {
-		await send({
-			hostname: transport.hostname,
-			port: transport.port,
-			tls: transport.tls,
-			auth: transport.auth,
-			from: transport.from,
+		// sendEmail routes cloudflare -> Email Sending REST api, custom smtp -> edgeport
+		await sendEmail(env, {
 			to: body.to,
 			subject: 'Smoke Test Email',
 			text: 'This is a test email from your Smoke support desk.'
@@ -44,16 +38,10 @@ export default defineEventHandler(async (event) => {
 			cur = cur?.cause;
 		}
 		const message = chain.join(' <- ') || String(error);
-
-		console.error('[test-email] send failed', { hostname: transport.hostname, chain });
-		const isConnectFailure = /failed to (open|connect)|timed out/i.test(message);
-		const hint =
-			isConnectFailure && transport.hostname.includes('cloudflare')
-				? ' - the worker could not open a socket to smtp.mx.cloudflare.net:465. If Email Sending is already enabled and the DNS records are verified, this is a worker-to-relay connectivity problem rather than a credential or onboarding issue.'
-				: '';
+		console.error('[test-email] send failed', { chain });
 		throw createError({
 			statusCode: 422,
-			message: `Test email failed: ${message}${hint}`,
+			message: `Test email failed: ${message}`,
 			data: { success: false }
 		});
 	}
