@@ -9,6 +9,7 @@ export type QueryParameters = {
 	priority?: string;
 	labels?: string;
 	assignee?: string;
+	archived?: 'exclude' | 'only' | 'all';
 };
 
 export function toSearchParams(options?: QueryParameters): URLSearchParams {
@@ -25,6 +26,7 @@ export function toSearchParams(options?: QueryParameters): URLSearchParams {
 	if (options.priority) params.append('priority', options.priority);
 	if (options.labels) params.append('labels', options.labels);
 	if (options.assignee) params.append('assignee', options.assignee);
+	if (options.archived) params.append('archived', options.archived);
 
 	return params;
 }
