@@ -27,7 +27,16 @@
 						/>
 						<span class="text-xs font-medium uppercase tracking-wide">{{ kpi.label }}</span>
 					</div>
-					<p class="mt-2 text-2xl font-semibold tabular-nums">{{ kpi.value }}</p>
+					<USkeleton
+						v-if="loading"
+						class="mt-2 h-8 w-16"
+					/>
+					<p
+						v-else
+						class="mt-2 text-2xl font-semibold tabular-nums"
+					>
+						{{ kpi.value }}
+					</p>
 				</div>
 			</UContextMenu>
 		</div>
@@ -41,7 +50,12 @@
 						<h3 class="text-sm font-semibold">Ticket Volume</h3>
 						<span class="text-xs text-slate-400">{{ volume.length }} days</span>
 					</div>
+					<USkeleton
+						v-if="loading"
+						class="h-18 w-full rounded-md"
+					/>
 					<AnalyticsSparkline
+						v-else
 						:data="volumeSeries"
 						:width="320"
 						:height="72"
@@ -56,7 +70,10 @@
 					class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
 				>
 					<h3 class="mb-3 text-sm font-semibold">By Status</h3>
-					<AnalyticsBarChart :items="statusBars" />
+					<AnalyticsBarChart
+						:items="statusBars"
+						:loading="loading"
+					/>
 				</div>
 			</UContextMenu>
 
@@ -65,7 +82,10 @@
 					class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
 				>
 					<h3 class="mb-3 text-sm font-semibold">By Priority</h3>
-					<AnalyticsBarChart :items="priorityBars" />
+					<AnalyticsBarChart
+						:items="priorityBars"
+						:loading="loading"
+					/>
 				</div>
 			</UContextMenu>
 
@@ -74,7 +94,10 @@
 					class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
 				>
 					<h3 class="mb-3 text-sm font-semibold">Channel Mix</h3>
-					<AnalyticsBarChart :items="channelBars" />
+					<AnalyticsBarChart
+						:items="channelBars"
+						:loading="loading"
+					/>
 				</div>
 			</UContextMenu>
 		</div>
@@ -84,8 +107,11 @@
 <script setup lang="ts">
 import type { AnalyticsRange } from '~/stores/analytics';
 
-const { range, summary, fetchSummary } = useAnalytics('30d');
+const { range, summary, pending, fetchSummary } = useAnalytics('30d');
 const { widgetMenu } = useEntityMenus();
+
+// skeleton only on the first load; a range refetch keeps the prior data on screen
+const loading = computed(() => pending.value && !summary.value);
 
 const refresh = () => fetchSummary(undefined, true);
 

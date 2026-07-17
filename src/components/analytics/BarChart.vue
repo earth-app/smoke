@@ -1,5 +1,23 @@
 <template>
-	<div class="flex flex-col gap-2">
+	<div
+		v-if="loading"
+		class="flex flex-col gap-2"
+	>
+		<div
+			v-for="n in 3"
+			:key="n"
+			class="flex items-center gap-3"
+		>
+			<USkeleton class="h-3 w-28 shrink-0 rounded" />
+			<USkeleton class="h-4 flex-1 rounded-full" />
+			<USkeleton class="h-3 w-8 shrink-0 rounded" />
+		</div>
+	</div>
+
+	<div
+		v-else
+		class="flex flex-col gap-2"
+	>
 		<div
 			v-for="bar in bars"
 			:key="bar.label"
@@ -26,7 +44,9 @@
 <script setup lang="ts">
 type Item = { label: string; value: number; color?: string };
 
-const props = defineProps<{ items: Item[] }>();
+const props = withDefaults(defineProps<{ items: Item[]; loading?: boolean }>(), {
+	loading: false
+});
 
 const DEFAULT_COLORS = ['#3b82f6', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#ec4899'];
 
