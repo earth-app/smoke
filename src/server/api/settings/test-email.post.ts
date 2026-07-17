@@ -34,12 +34,15 @@ export default defineEventHandler(async (event) => {
 			text: 'This is a test email from your Smoke support desk.'
 		});
 	} catch (error) {
-		// a bad/placeholder transport (e.g. an invalid Cloudflare token) must surface as a clean
-		// 422, not an unhandled 500 - the message helps the owner fix their credentials
 		const message = error instanceof Error ? error.message : String(error);
+		const isConnectFailure = /failed to (open|connect)|timed out/i.test(message);
+		const hint =
+			isConnectFailure && transport.hostname.includes('cloudflare')
+				? ' - could not reach smtp.mx.cloudflare.net. Finish "Set Up Email Sending" on the Cloudflare tab (verify your domain with the DKIM/SPF records) so Cloudflare accepts the token.'
+				: '';
 		throw createError({
 			statusCode: 422,
-			message: `Test email failed: ${message}`,
+			message: `Test email failed: ${message}${hint}`,
 			data: { success: false }
 		});
 	}
