@@ -49,7 +49,15 @@
 					>
 						{{ project.description }}
 					</p>
-					<span class="mt-auto text-xs text-slate-400">{{ countFor(project.id) }} Tickets</span>
+					<USkeleton
+						v-if="ticketsPending"
+						class="mt-auto h-4 w-16 rounded"
+					/>
+					<span
+						v-else
+						class="mt-auto text-xs text-slate-400"
+						>{{ countFor(project.id) }} Tickets</span
+					>
 				</NuxtLink>
 			</UContextMenu>
 		</div>
@@ -74,7 +82,7 @@ const { projectMenu } = useEntityMenus();
 const canManage = computed(() => isAdmin.value || can(Permission.ManageSettings));
 
 const { projects, pending } = useProjects();
-const { tickets } = useTickets(() => ({ limit: 100 }));
+const { tickets, pending: ticketsPending } = useTickets(() => ({ limit: 100 }));
 
 function countFor(id: number): number {
 	return tickets.value.filter(

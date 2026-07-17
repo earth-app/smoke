@@ -10,7 +10,20 @@
 		>
 
 		<div
-			v-if="project"
+			v-if="projectsPending && !project"
+			class="flex flex-wrap items-start justify-between gap-3"
+		>
+			<div class="flex items-start gap-3">
+				<USkeleton class="mt-1 size-4 shrink-0 rounded-full" />
+				<div class="space-y-2">
+					<USkeleton class="h-8 w-48" />
+					<USkeleton class="h-4 w-64" />
+				</div>
+			</div>
+			<USkeleton class="h-9 w-32 rounded-md" />
+		</div>
+		<div
+			v-else-if="project"
 			class="flex flex-wrap items-start justify-between gap-3"
 		>
 			<div class="flex items-start gap-3">
@@ -53,7 +66,7 @@ definePageMeta({ layout: 'dashboard', middleware: 'staff' });
 const route = useRoute();
 const id = computed(() => Number(route.params.id));
 
-const { getProject } = useProjects();
+const { getProject, pending: projectsPending } = useProjects();
 const project = computed(() => getProject(id.value));
 
 const { tickets, pending, listTickets } = useTickets(() => ({
