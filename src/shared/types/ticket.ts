@@ -9,6 +9,17 @@ export enum TicketStatus {
 	WontFix = 'wont_fix'
 }
 
+export const CLOSED_STATUSES: TicketStatus[] = [TicketStatus.Closed, TicketStatus.WontFix];
+export const OPEN_STATUSES: TicketStatus[] = [
+	TicketStatus.Submitted,
+	TicketStatus.Open,
+	TicketStatus.Pending,
+	TicketStatus.WorkInProgress
+];
+export function isClosedStatus(status: string): boolean {
+	return (CLOSED_STATUSES as string[]).includes(status);
+}
+
 export enum TicketPriority {
 	None = 'none',
 	Low = 'low',
