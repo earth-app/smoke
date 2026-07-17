@@ -249,66 +249,105 @@ const SCHEMA_DDL = [
 
 let ensuredBindings = new WeakSet<object>();
 
+// bump when SCHEMA_DDL changes so the warm-deploy fast path re-applies the new ddl
+const SCHEMA_VERSION = 1;
+const SCHEMA_READY_PREFIX = 'smoke:schema_ready:';
+
 export function resetSchemaEnsured() {
 	ensuredBindings = new WeakSet<object>();
 }
 
-// env.DB + every discovered DB_* shard binding
-function collectShardBindings(env: any): unknown[] {
-	const bindings: unknown[] = env?.DB ? [env.DB] : [];
+// env.DB + every discovered DB_* shard binding, with the binding name (for the ready flag)
+function collectShardBindings(env: any): { name: string; binding: unknown }[] {
+	const out: { name: string; binding: unknown }[] = env?.DB
+		? [{ name: 'DB', binding: env.DB }]
+		: [];
 	for (const key of Object.keys(env ?? {})) {
 		if (key === 'KV' || key === 'CACHE' || key === 'EMAIL' || key === 'ShardCoordinator') continue;
 		if (key.toLowerCase().startsWith('db_') || key.toLowerCase().startsWith('db-')) {
-			if (env[key]) bindings.push(env[key]);
+			if (env[key]) out.push({ name: key, binding: env[key] });
 		}
 	}
-	return bindings;
+	return out;
+}
+
+async function applyDdlToBinding(binding: unknown): Promise<boolean> {
+	if (!binding || typeof binding !== 'object') return true;
+	if (ensuredBindings.has(binding as object)) return true;
+
+	let client: DrizzleClientLike | null = null;
+	const candidate = binding as DrizzleClientLike & { prepare?: unknown };
+	if (typeof candidate?.run === 'function') {
+		client = candidate;
+	} else if (typeof candidate?.prepare === 'function') {
+		try {
+			client = drizzleD1(binding as AnyD1Database);
+		} catch {
+			client = null;
+		}
+	}
+	if (!client?.run) return true;
+
+	// local sqlite (test/parallel lanes) benefits from these; d1 rejects them -- best-effort
+	for (const pragma of ['PRAGMA busy_timeout = 5000', 'PRAGMA journal_mode = WAL']) {
+		try {
+			await client.run(sql.raw(pragma));
+		} catch {
+			// non-sqlite driver (e.g. d1) or unsupported; harmless
+		}
+	}
+
+	let ok = true;
+	for (const statement of SCHEMA_DDL) {
+		try {
+			await client.run(sql.raw(statement));
+		} catch (error) {
+			// an ALTER ADD COLUMN on a db that already has the column is expected + harmless;
+			// the driver wraps it ("Failed query: ...") with the real reason on .cause
+			const err = error as { message?: string; cause?: { message?: string } };
+			const text = `${err?.message ?? ''} ${err?.cause?.message ?? ''}`;
+			if (/duplicate column name|already exists/i.test(text)) continue;
+			console.error('[ensureSchema] statement failed', text || error);
+			ok = false;
+		}
+	}
+
+	// only skip this shard next time if its ddl fully applied
+	if (ok) ensuredBindings.add(binding as object);
+	return ok;
 }
 
 export async function ensureSchema(env: any): Promise<void> {
-	for (const binding of collectShardBindings(env)) {
-		if (!binding || typeof binding !== 'object') continue;
-		if (ensuredBindings.has(binding as object)) continue;
+	const shards = collectShardBindings(env);
+	if (shards.length === 0) return;
 
-		let client: DrizzleClientLike | null = null;
-		const candidate = binding as DrizzleClientLike & { prepare?: unknown };
-		if (typeof candidate?.run === 'function') {
-			client = candidate;
-		} else if (typeof candidate?.prepare === 'function') {
-			try {
-				client = drizzleD1(binding as AnyD1Database);
-			} catch {
-				client = null;
+	const flagKey = `${SCHEMA_READY_PREFIX}${SCHEMA_VERSION}:${shards
+		.map((s) => s.name)
+		.sort()
+		.join(',')}`;
+	try {
+		if ((await kv.get(flagKey)) != null) {
+			for (const { binding } of shards) {
+				if (binding && typeof binding === 'object') ensuredBindings.add(binding as object);
 			}
+			return;
 		}
-		if (!client?.run) continue;
+	} catch {
+		// kv unavailable (some lanes) -> just run the ddl
+	}
 
-		// local sqlite (test/parallel lanes) benefits from these; d1 rejects them -- best-effort
-		for (const pragma of ['PRAGMA busy_timeout = 5000', 'PRAGMA journal_mode = WAL']) {
-			try {
-				await client.run(sql.raw(pragma));
-			} catch {
-				// non-sqlite driver (e.g. d1) or unsupported; harmless
-			}
+	let allOk = true;
+	for (const { binding } of shards) {
+		const ok = await applyDdlToBinding(binding);
+		if (!ok) allOk = false;
+	}
+
+	if (allOk) {
+		try {
+			await kv.set(flagKey, '1');
+		} catch {
+			// best-effort; the per-isolate WeakSet still prevents re-running this isolate
 		}
-
-		let ok = true;
-		for (const statement of SCHEMA_DDL) {
-			try {
-				await client.run(sql.raw(statement));
-			} catch (error) {
-				// an ALTER ADD COLUMN on a db that already has the column is expected + harmless;
-				// the driver wraps it ("Failed query: ...") with the real reason on .cause
-				const err = error as { message?: string; cause?: { message?: string } };
-				const text = `${err?.message ?? ''} ${err?.cause?.message ?? ''}`;
-				if (/duplicate column name|already exists/i.test(text)) continue;
-				console.error('[ensureSchema] statement failed', text || error);
-				ok = false;
-			}
-		}
-
-		// only skip this shard next time if its ddl fully applied
-		if (ok) ensuredBindings.add(binding as object);
 	}
 }
 
@@ -371,7 +410,8 @@ export function ensureCollegeDB(env: any) {
 		strategy: {
 			read: 'location',
 			write: 'hash'
-		}
+		},
+		mappingCacheTtlMs: 600_000
 	});
 
 	collegeDBInitialized = true;
