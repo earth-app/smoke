@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Ticket } from '~/shared/types/ticket';
+import { TicketStatus } from '~/shared/types/ticket';
 import { Permission } from '~/shared/types/user';
 import { getRuntime, seedCustomer, seedTicket, seedUser, type RouteRuntime } from './route-runtime';
 
@@ -79,7 +80,7 @@ describe('notifyTicketEvent', () => {
 		expect(custMail.body).toContain(`?id=${ticket.id}`);
 	});
 
-	it('sends nothing for an email-thread ticket', async () => {
+	it('sends nothing for a MESSAGE on an email-thread ticket', async () => {
 		const rt = getRuntime();
 		const { ticket } = await seedAssignedTicket(rt);
 
@@ -88,6 +89,74 @@ describe('notifyTicketEvent', () => {
 
 		await utils.notifyTicketEvent('message', ticket, rt.env, { message: 'x' });
 		expect(sent).toHaveLength(0);
+	});
+
+	it('notifies everyone on a generic status change with from/to labels', async () => {
+		const rt = getRuntime();
+		const { ticket, customerEmail, agentA, agentB } = await seedAssignedTicket(rt);
+
+		await utils.notifyTicketEvent('status', ticket, rt.env, {
+			fromStatus: 'open',
+			toStatus: 'work_in_progress'
+		});
+
+		expect(recipients()).toEqual([agentA.email, agentB.email, customerEmail].sort());
+		const custMail = sent.find((s) => s.to === customerEmail)!;
+		expect(custMail.subject).toContain('Status Updated');
+		expect(custMail.body).toContain('from Open to Work In Progress');
+	});
+
+	it('STILL notifies on a state change for an email-thread ticket (only messages skip)', async () => {
+		const rt = getRuntime();
+		const { ticket, customerEmail } = await seedAssignedTicket(rt);
+		await utils.initEmailThread(ticket.id, 'Broken Login', 'cust@example.com');
+
+		// the reported bug: closing an email-thread ticket sent the customer nothing
+		await utils.notifyTicketEvent('closed', ticket, rt.env);
+		expect(recipients()).toContain(customerEmail);
+
+		sent = [];
+		await utils.notifyTicketEvent('status', ticket, rt.env, {
+			fromStatus: 'open',
+			toStatus: 'pending'
+		});
+		expect(recipients()).toContain(customerEmail);
+
+		// but a message on the same email-thread ticket is still suppressed (the mirror covers it)
+		sent = [];
+		await utils.notifyTicketEvent('message', ticket, rt.env, { message: 'x' });
+		expect(sent).toHaveLength(0);
+	});
+
+	it('emails the customer end-to-end when a ticket is closed via patchTicket', async () => {
+		const rt = getRuntime();
+		const customer = await seedCustomer(rt, { name: 'C', email: 'e2e@example.com' });
+		const seeded = await seedTicket(rt, {
+			title: 'Login broken',
+			description: 'help',
+			customer_id: customer.id,
+			status: TicketStatus.Open
+		});
+
+		sent = [];
+		await utils.patchTicket(seeded.id, { status: TicketStatus.Closed }, rt.env, {
+			actorId: 'staff-x'
+		});
+		const custMail = sent.find((s) => s.to === 'e2e@example.com');
+		expect(custMail).toBeTruthy();
+		expect(custMail!.subject).toContain('Closed');
+	});
+
+	it('includes ticket participants as customer-facing recipients', async () => {
+		const rt = getRuntime();
+		const { ticket } = await seedAssignedTicket(rt);
+		ticket.participants = ['cc@example.com'];
+
+		await utils.notifyTicketEvent('status', ticket, rt.env, {
+			fromStatus: 'open',
+			toStatus: 'pending'
+		});
+		expect(recipients()).toContain('cc@example.com');
 	});
 
 	it('respects the notifications-off setting', async () => {
