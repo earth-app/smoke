@@ -11,6 +11,9 @@ const SETUP_COOKIE_OPTS = { path: '/', maxAge: 31536000, sameSite: 'lax' as cons
 async function sealSetup(event: Parameters<typeof setCookie>[0]) {
 	await kv.set(SETUP_KV_KEY, '1');
 	setCookie(event, SETUP_COOKIE, '1', SETUP_COOKIE_OPTS);
+
+	// bust the cached setup-status so the middleware stops redirecting to /setup immediately
+	await invalidateSetupStatus();
 }
 
 const emailSettings = z.object({}).loose().optional();
