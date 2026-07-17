@@ -41,6 +41,7 @@ export const useCloudflareStore = defineStore('cloudflare', () => {
 
 	const status = ref<CloudflareStatus | null>(null);
 	const statusPromise = ref<Promise<CloudflareStatus | null> | null>(null);
+	const loaded = ref(false);
 	const workers = ref<CloudflareWorker[]>([]);
 	const workersPromise = ref<Promise<CloudflareWorker[]> | null>(null);
 
@@ -52,7 +53,10 @@ export const useCloudflareStore = defineStore('cloudflare', () => {
 		if (statusPromise.value) return statusPromise.value;
 		if (status.value && !force) return status.value;
 		// status is auth-only; skip the guaranteed 401 when signed out (e.g. the setup wizard)
-		if (!authStore.sessionToken) return status.value;
+		if (!authStore.sessionToken) {
+			loaded.value = true;
+			return status.value;
+		}
 
 		statusPromise.value = (async () => {
 			try {
@@ -68,6 +72,7 @@ export const useCloudflareStore = defineStore('cloudflare', () => {
 				return status.value;
 			} finally {
 				statusPromise.value = null;
+				loaded.value = true;
 			}
 		})();
 
@@ -110,8 +115,11 @@ export const useCloudflareStore = defineStore('cloudflare', () => {
 				credentials: 'include',
 				headers: authHeaders()
 			});
-			status.value = result;
-			return result;
+
+			status.value = { ...result, linked: true };
+			loaded.value = true;
+			const refreshed = await fetchStatus(true);
+			return refreshed ?? status.value;
 		} catch (error) {
 			console.error('Failed to link Cloudflare account:', error);
 			throw error;
@@ -152,6 +160,7 @@ export const useCloudflareStore = defineStore('cloudflare', () => {
 
 	return {
 		status,
+		loaded,
 		zones,
 		workers,
 		fetchStatus,

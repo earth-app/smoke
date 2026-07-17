@@ -5,6 +5,7 @@ export function useCloudflare() {
 	const cloudflareStore = useCloudflareStore();
 
 	const status = computed(() => cloudflareStore.status);
+	const loaded = computed(() => cloudflareStore.loaded);
 	const isLinked = computed(() => !!cloudflareStore.status?.linked);
 	const zones = computed(() => cloudflareStore.zones);
 	const workers = computed(() => cloudflareStore.workers);
@@ -34,6 +35,7 @@ export function useCloudflare() {
 
 	return {
 		status,
+		loaded,
 		isLinked,
 		zones,
 		workers,

@@ -21,11 +21,28 @@
 			>
 		</div>
 
+		<div
+			v-if="!loaded"
+			class="flex flex-col gap-3"
+		>
+			<USkeleton class="h-3 w-20" />
+			<USkeleton class="h-9 w-full" />
+			<USkeleton class="h-3 w-20" />
+			<USkeleton class="h-9 w-full" />
+			<USkeleton class="h-9 w-32" />
+		</div>
+
 		<form
-			v-if="!isLinked"
+			v-else-if="!isLinked || replacing"
 			class="flex flex-col gap-3"
 			@submit.prevent="submitLink"
 		>
+			<p
+				v-if="replacing"
+				class="text-xs text-slate-500"
+			>
+				Enter a new API token to replace the linked credentials. The account stays connected.
+			</p>
 			<UFormField
 				label="Account ID"
 				size="sm"
@@ -48,14 +65,24 @@
 					class="w-full"
 				/>
 			</UFormField>
-			<UButton
-				type="submit"
-				color="primary"
-				icon="mdi:link-variant"
-				:loading="linking"
-				:disabled="!accountId.trim() || !token.trim()"
-				>Link Account</UButton
-			>
+			<div class="flex gap-2">
+				<UButton
+					type="submit"
+					color="primary"
+					:icon="replacing ? 'mdi:key-change' : 'mdi:link-variant'"
+					:loading="linking"
+					:disabled="!accountId.trim() || !token.trim()"
+					>{{ replacing ? 'Replace Token' : 'Link Account' }}</UButton
+				>
+				<UButton
+					v-if="replacing"
+					color="neutral"
+					variant="ghost"
+					icon="mdi:close"
+					@click="cancelReplace"
+					>Cancel</UButton
+				>
+			</div>
 		</form>
 
 		<div
@@ -124,7 +151,14 @@
 				>
 			</form>
 
-			<div class="flex justify-end">
+			<div class="flex justify-between gap-2 border-t border-slate-100 pt-4 dark:border-slate-800">
+				<UButton
+					color="neutral"
+					variant="ghost"
+					icon="mdi:key-change"
+					@click="startReplace"
+					>Replace Token</UButton
+				>
 				<UButton
 					color="error"
 					variant="ghost"
@@ -140,7 +174,8 @@
 
 <script setup lang="ts">
 const toast = useToast();
-const { status, isLinked, link, provision, unlink, zones, workers, fetchWorkers } = useCloudflare();
+const { status, loaded, isLinked, link, provision, unlink, zones, workers, fetchWorkers } =
+	useCloudflare();
 
 const accountId = ref('');
 const token = ref('');
@@ -151,6 +186,19 @@ const manualWorkers = ref<string[]>([]);
 const linking = ref(false);
 const provisioning = ref(false);
 const unlinking = ref(false);
+// re-enter credentials on a linked account without a destructive unlink first
+const replacing = ref(false);
+
+function startReplace() {
+	accountId.value = status.value?.account_id ?? '';
+	token.value = '';
+	replacing.value = true;
+}
+
+function cancelReplace() {
+	replacing.value = false;
+	token.value = '';
+}
 
 watch(status, (value) => {
 	if (value?.zone_id) zoneId.value = value.zone_id;
@@ -204,12 +252,16 @@ const checklist = computed(() => [
 
 async function submitLink() {
 	linking.value = true;
+	const wasReplacing = replacing.value;
 	try {
 		await link({ account_id: accountId.value.trim(), token: token.value.trim() });
 		token.value = '';
+		replacing.value = false;
 		toast.add({
-			title: 'Account Linked',
-			description: 'Your Cloudflare account is connected.',
+			title: wasReplacing ? 'Token Replaced' : 'Account Linked',
+			description: wasReplacing
+				? 'The Cloudflare API token was updated.'
+				: 'Your Cloudflare account is connected.',
 			icon: 'mdi:check',
 			color: 'success',
 			duration: 3000
