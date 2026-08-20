@@ -61,7 +61,7 @@
     "nuxt-api-shield": "^1.0.0",
     "nuxt-schema-org": "^6.2.3",
     "nuxt-viewport": "^2.4.0",
-    "postal-mime": "^2.7.5",
+    "postal-mime": "^3.0.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
