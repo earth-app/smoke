@@ -32,8 +32,8 @@
   },
   "dependencies": {
     "@codecov/nuxt-plugin": "^2.0.1",
-    "@earth-app/collegedb": "1.2.4",
-    "@libsql/client": "^0.17.4",
+    "@earth-app/collegedb": "1.3.0",
+    "@libsql/client": "^0.18.0",
     "@noble/hashes": "^2.2.0",
     "@nuxt/icon": "^2.3.1",
     "@nuxt/image": "^2.0.0",
